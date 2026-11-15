@@ -309,6 +309,27 @@ class ReplanningAgent:
         return after - before
 
 
+# Parts of R1's DeliverySimEnvironment (src/sim/environment.py) this planner
+# relies on: the undelivered orders per vehicle, and failing an order.
+ENV_INTERNALS = ("_pending", "_fail")
+
+
+def _check_env_internals(env) -> None:
+    """Fail loudly if R1's environment no longer has what we read.
+
+    Without this, a rename in R1's code would silently give every vehicle
+    priority 1 (full mode) and stop failing unreachable orders.
+    """
+    for name in ENV_INTERNALS:
+        if not hasattr(env, name):
+            raise AttributeError(
+                f"{type(env).__name__} has no attribute {name!r}: AgentPlanner needs "
+                f"{', '.join(ENV_INTERNALS)} from R1's DeliverySimEnvironment "
+                "(src/sim/environment.py) for mode='full' or unreachable='fail'. "
+                "If R1 renamed it, update ENV_INTERNALS and its uses in "
+                "src/sim/agent_planner.py.")
+
+
 class AgentPlanner(Planner):
     """Fleet of replanning agents attached to R1's DeliverySimEnvironment."""
 
@@ -327,6 +348,8 @@ class AgentPlanner(Planner):
             raise ValueError(f"unreachable must be one of {UNREACHABLE_POLICIES}")
         if mode == "full" and coordination is None:
             logger.warning("full mode without a coordination hook: behaves as independent")
+        if mode == "full" or unreachable == "fail":
+            _check_env_internals(env)
         self.env = env
         self.mode = mode
         self.heuristic = heuristic
@@ -404,7 +427,8 @@ class AgentPlanner(Planner):
 
     def pending_orders(self, vid: str) -> List[Any]:
         """The vehicle's undelivered orders in R1's environment."""
-        return list(getattr(self.env, "_pending", {}).get(vid, []))
+        pending = getattr(self.env, "_pending", None)   # checked in __init__ when needed
+        return list(pending.get(vid, [])) if pending is not None else []
 
     # -- events ----------------------------------------------------------
     def on_event(self, event) -> None:
@@ -475,7 +499,7 @@ class AgentPlanner(Planner):
                 taken = {o.id for o in (self.reassign(vid, list(orders), t) or ())}
             except Exception as exc:              # R4's hook failing must not stop the run
                 self._hook_error("reassign", vid, t, exc)
-        pending = getattr(self.env, "_pending", {}).get(vid)
+        pending = self.env._pending.get(vid)    # present: checked in __init__
         failed, reassigned = [], []
         for o in orders:
             if pending is not None and o in pending:
@@ -484,9 +508,7 @@ class AgentPlanner(Planner):
                 reassigned.append(o.id)
             else:
                 failed.append(o.id)
-                fail = getattr(self.env, "_fail", None)
-                if fail is not None:
-                    fail(agent.vehicle, o, "unreachable")
+                self.env._fail(agent.vehicle, o, "unreachable")
         self.failed_unreachable.extend(failed)
         self.reassigned.extend(reassigned)
         self.env.log_event("stop_unreachable", {

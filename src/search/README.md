@@ -341,6 +341,27 @@ and never for a negotiation detour, each vehicle replans at most once per disrup
 auctions and detours really happen. Bugs injected by hand (hook called after a detour, hysteresis off, order left
 pending, no cascade, reassign ignored, no rate limit, trigger ignored, loser never detours, flat bids) are caught.
 
+**Limits to know (from the review of PR #27).**
+1. **A "wait" result does nothing yet.** When waiting is cheaper than a detour, the auction loser should hold back,
+   but R1's simulator has no way to hold a vehicle, so `"wait"` is only written in `negotiation_result.actions`. In the
+   reviewer's 20-vehicle run, 9 of 10 auction results were "wait", and full and independent mode took the same total
+   delivery time (53,766 s vs 53,753 s). Until R1 adds a hold, full mode cannot show that negotiation helps.
+2. **The trigger runs only after a route change.** R5's hook is called once per vehicle whose route switched (or was
+   re-planned after an unreachable stop). A route that only gets new arrival times, or that hysteresis keeps, does not
+   call it, and nothing calls it at the start of a run. So conflicts already in the first plans (273 at 06:00 in the
+   reviewer's 20-vehicle demo, capacity 1 on every road) are never negotiated unless a replan happens. Whether the
+   trigger should also run at the start or when times shift is a decision for R5 and R7 to make and write down.
+3. **A `replan` row means the route changed.** Since Week 5, a cost change that leaves the path the same writes no
+   row, and a route kept by hysteresis writes `replan_kept`. Counts quoted from Week 4 logs are not comparable (the
+   reviewer's 10-vehicle demo at 120 disruptions/hour: 341 rows before, 3 after, same deliveries).
+4. `edge_capacities` defaults to capacity 1 on every road; nothing builds decision D5's per-road-class capacities yet
+   (to agree with R5).
+5. `unreachable="fail"` fails an order for good even if the closure was temporary. R1's closure guard prevents this in
+   generated scenarios.
+6. Full mode and `unreachable="fail"` read two parts of R1's environment, `_pending` and `_fail`. Since the review,
+   `AgentPlanner` checks for them when it starts and raises `AttributeError` naming the missing one, instead of
+   quietly using priority 1 and not failing orders.
+
 ## Robustness and profiling (R7, Week 6)
 Code: `src/sim/agent_planner.py`, `src/search/sim_replanner.py`, new `src/search/profile_replan.py`.
 Tests: `tests/test_agent_planner_w6.py` (25).
