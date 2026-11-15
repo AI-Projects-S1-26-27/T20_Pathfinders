@@ -22,11 +22,13 @@ import csv
 import json
 import logging
 import os
+import sys
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 
+from src.sim.environment import DEFAULT_DURATION_S, DEFAULT_START_TIME_S
 from src.sim.run import MODES, run_from_config
 
 COLUMNS = ["mode", "delivered", "failed", "disruptions", "replans", "negotiation_msgs",
@@ -64,8 +66,26 @@ def summarize(rows: List[Dict[str, Any]], mode: str, wall_s: float) -> Dict[str,
     }
 
 
+def released_orders(config: Dict[str, Any]) -> int:
+    """Orders whose release_time falls before the end of the run."""
+    start = float(config.get("start_time_s", DEFAULT_START_TIME_S))
+    end = start + float(config.get("duration_seconds", DEFAULT_DURATION_S))
+    return sum(float(o.get("release_time", 0.0)) <= end for o in config.get("orders", []))
+
+
+def accounting_warning(result: Dict[str, Any]) -> Optional[str]:
+    """Every released order must end delivered or failed; say so if not."""
+    missing = result["released"] - result["delivered"] - result["failed"]
+    if missing <= 0:
+        return None
+    return (f"WARNING ({result['mode']}): delivered + failed = "
+            f"{result['delivered'] + result['failed']} < {result['released']} orders released; "
+            f"{missing} order(s) neither delivered nor failed (log: {result.get('log')})")
+
+
 def run_modes(config: Dict[str, Any], modes, out_dir: str = "logs") -> List[Dict[str, Any]]:
     base_id = str(config.get("run_id", "sim"))
+    released = released_orders(config)
     results = []
     for mode in modes:
         cfg = dict(config, mode=mode, run_id=f"{base_id}_{mode}",
@@ -73,7 +93,8 @@ def run_modes(config: Dict[str, Any], modes, out_dir: str = "logs") -> List[Dict
         t0 = time.perf_counter()
         log_path = run_from_config(cfg)
         wall = time.perf_counter() - t0
-        results.append({**summarize(read_log(log_path), mode, wall), "log": log_path})
+        results.append({**summarize(read_log(log_path), mode, wall),
+                        "released": released, "log": log_path})
     return results
 
 
@@ -84,6 +105,10 @@ def print_table(results: List[Dict[str, Any]]) -> None:
         print("  ".join(str(r[c]).ljust(widths[c]) for c in COLUMNS))
     for r in results:
         print(f"log ({r['mode']}): {r['log']}")
+    for r in results:
+        warning = accounting_warning(r) if "released" in r else None
+        if warning:
+            print(warning, file=sys.stderr)
 
 
 def main() -> None:
