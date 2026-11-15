@@ -14,7 +14,8 @@ will see `Traffic model unavailable, using free-flow times` - this is expected.
 ## Modes (W4)
 
 The config's `mode` picks the condition; `run.py` builds the matching simulation
-(`build_simulation(config, world=None)` returns `(env, planner)`):
+(`build_simulation(config, world=None)` returns `(env, planner)`). **The default mode is now
+`independent`**: a config without `mode` runs with R7's replanning agents, not fixed routes.
 
 | mode | simulation | who decides routes |
 |------|------------|--------------------|
@@ -42,12 +43,21 @@ R7's `replan_summary` is logged just before `sim_complete` (`env.add_finisher`).
 **Check-in demo**: one scenario, same seed, every mode, table from the logs:
 
 ```bash
-python -m src.sim.demo_modes                         # configs/viz_demo.yaml, 3 modes
+python -m src.sim.demo_modes --rate 300             # configs/viz_demo.yaml, 3 modes
 python -m src.sim.demo_modes --modes independent full --rate 600   # force replans
 python -m src.sim.demo_modes --csv reports/checkin_modes.csv
 ```
 
 Logs go to `logs/<run_id>_<mode>.jsonl` (R2's replay/multipane viewers read them).
+At viz_demo's own rate (10/h) no disruption hits a planned road, so the demo uses `--rate 300`.
+Measured here: independent and full take ~4 s each at `--rate 300`; **centralized is slow at
+this rate** (R4 re-solves on every disruption: 44.8 of 240 simulated minutes after ~10 min), so for
+a quick live demo add `--modes independent full`.
+The demo warns (stderr) if delivered + failed is less than the number of orders released.
+
+Every order ends `order_delivered` or `order_failed` with a reason: `not_on_route` /
+`capacity_exceeded_unservable` at the end of a vehicle's route, `horizon_exceeded` if still pending
+when the run ends, `no_vehicle` (logged right after `sim_start`) if the config has no vehicles.
 
 ## Files
 
