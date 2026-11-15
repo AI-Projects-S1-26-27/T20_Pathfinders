@@ -56,6 +56,43 @@ checks this against brute force on 25 random instances.
 - Consequence for the system: the CSP is used on small sub-problems (one new order -> `eligible_vehicles`, or a
   handful of orders after a disruption), never as one global problem over 300 orders.
 
+## New-order fast path (Week 5)
+
+Code: `src/kr/fast_path.py` · Tests: `tests/test_fast_path.py`
+
+When an order arrives during the run, `NewOrderFilter.check(order)` re-checks every vehicle against its
+current plan. Each vehicle is decided by the first step that settles it:
+
+| Step | Decides | How |
+|---|---|---|
+| KR-1 | reject | load + committed + new demand > capacity |
+| KR-11 | reject | not released yet |
+| bound | reject | even driving straight there it is late, has no path, or cannot return by shift end |
+| insertion | accept | the new order slotted into the current stop order gives a feasible schedule |
+| exact | accept / reject | `csp.set_feasible` (full stop-order search), only if nothing above decided |
+
+The rejections are necessary conditions (the direct trip is a lower bound on arrival), and insertion only
+accepts a schedule it has checked, so the answer equals `eligible_vehicles` whenever that is exact (up to 9
+stops per vehicle). `test_same_answer_as_the_exact_check` checks this on 25 random cases (200 arrivals);
+`test_exact_route_finds_a_reordering_insertion_misses` shows a case only the exact step can solve.
+After a vehicle takes the order, `assign(vid, order, result)` stores the checked sequence for the next arrival.
+
+Benchmark (`python -m src.kr.fast_path`, Euclidean toy world, 40 arrivals each, same answers in all 200):
+
+| Vehicles | Committed per vehicle | Capacity | Fast ms/order | Exact ms/order | Speed-up | Decided by |
+|---|---|---|---|---|---|---|
+| 15 | 4 | 8-16 | 0.086 | 0.208 | 2.4x | 506 insertion, 94 KR-1 |
+| 20 | 7 | 8-16 | 0.059 | 0.180 | 3.0x | 194 insertion, 606 KR-1 |
+| 20 | 9 | 8-16 | 0.012 | 0.014 | 1.2x | 800 KR-1 (all full) |
+| 20 | 6 | 30 | 0.170 | 0.470 | 2.8x | 799 insertion, 1 exact |
+| 20 | 8 | 40 | 0.305 | 0.996 | 3.3x | 800 insertion |
+
+Both are well under a millisecond per arrival, so the gain is modest; it grows with the number of stops a
+vehicle carries, because the exact search grows much faster than insertion (n + 1 schedule checks).
+
+TODO(R4/R1): call `NewOrderFilter.check` on each `new_order` event before the auction (Week 2's
+`OrderSampler.generate_order` creates the order).
+
 ## How other modules use it
 
 - **R4 (bidding filter):** `eligible_vehicles(order, vehicles, travel_time, t_now, committed)` -> vehicles allowed to bid,
