@@ -340,3 +340,72 @@ real map with R1's generator at 600/h (3 seeds, 8 vehicles, full mode): the hook
 and never for a negotiation detour, each vehicle replans at most once per disruption, message counts add up, and
 auctions and detours really happen. Bugs injected by hand (hook called after a detour, hysteresis off, order left
 pending, no cascade, reassign ignored, no rate limit, trigger ignored, loser never detours, flat bids) are caught.
+
+**Limits to know (from the review of PR #27).**
+1. **A "wait" result does nothing yet.** When waiting is cheaper than a detour, the auction loser should hold back,
+   but R1's simulator has no way to hold a vehicle, so `"wait"` is only written in `negotiation_result.actions`. In the
+   reviewer's 20-vehicle run, 9 of 10 auction results were "wait", and full and independent mode took the same total
+   delivery time (53,766 s vs 53,753 s). Until R1 adds a hold, full mode cannot show that negotiation helps.
+2. **The trigger runs only after a route change.** R5's hook is called once per vehicle whose route switched (or was
+   re-planned after an unreachable stop). A route that only gets new arrival times, or that hysteresis keeps, does not
+   call it, and nothing calls it at the start of a run. So conflicts already in the first plans (273 at 06:00 in the
+   reviewer's 20-vehicle demo, capacity 1 on every road) are never negotiated unless a replan happens. Whether the
+   trigger should also run at the start or when times shift is a decision for R5 and R7 to make and write down.
+3. **A `replan` row means the route changed.** Since Week 5, a cost change that leaves the path the same writes no
+   row, and a route kept by hysteresis writes `replan_kept`. Counts quoted from Week 4 logs are not comparable (the
+   reviewer's 10-vehicle demo at 120 disruptions/hour: 341 rows before, 3 after, same deliveries).
+4. `edge_capacities` defaults to capacity 1 on every road; nothing builds decision D5's per-road-class capacities yet
+   (to agree with R5).
+5. `unreachable="fail"` fails an order for good even if the closure was temporary. R1's closure guard prevents this in
+   generated scenarios.
+6. Full mode and `unreachable="fail"` read two parts of R1's environment, `_pending` and `_fail`. Since the review,
+   `AgentPlanner` checks for them when it starts and raises `AttributeError` naming the missing one, instead of
+   quietly using priority 1 and not failing orders.
+
+## Robustness and profiling (R7, Week 6)
+Code: `src/sim/agent_planner.py`, `src/search/sim_replanner.py`, new `src/search/profile_replan.py`.
+Tests: `tests/test_agent_planner_w6.py` (25).
+
+**D9 timing on every decision.** Every `replan` and `replan_kept` row has `cpu_seconds` (`time.process_time`) and,
+new, `wall_seconds` (`time.perf_counter`), including negotiation detours and unreachable drops. `replan_summary`
+now separates them:
+
+| Field | Meaning |
+| --- | --- |
+| `replan_cpu_seconds` | Sum of `cpu_seconds` over the `replan` rows. **Changed in W6**: W4/W5 summed every check. |
+| `kept_cpu_seconds` | Sum over `replan_kept` rows (hysteresis kept the route). |
+| `agent_cpu_seconds` | All agent work, including checks where nothing changed (what W4/W5 called replan CPU). |
+| `coordination_cpu_seconds` | Time inside the coordination hook (R5's trigger and auction, bid pricing, detours). |
+| `hook_errors`, `ignored_events` | Team hooks that raised; disruption events with no usable edge. |
+
+Timer warning: on Windows `process_time` moves in ~15.6 ms ticks, coarser than a replan (about 1 ms), so most
+per-replan CPU values there read 0.0. Use `wall_seconds` for per-replan latency on Windows; summed CPU over a whole
+run is still fine. `profile_replan` prints a warning when this happens.
+
+**Robustness fixes** (each found by a W6 test, each caught when put back by hand):
+- A disruption on a road not on the map raised `KeyError`, and the road stayed watched, so every later event
+  crashed too. Now ignored and dropped from the watched set.
+- A disruption whose `edge` is missing, `None`, `[]` or `[u]` crashed `on_event`. Now ignored and counted.
+- A failing coordination hook (R5) or reassign hook (R4) stopped the run. Now logged as a `hook_error` row
+  (`hook`, `error`); a failed reassign fails the orders instead.
+Also tested: no vehicles, a vehicle with no stops, a stop at the start node, two orders on one node, a finished
+vehicle, a closure on the road being driven, ten disruptions at one instant (checked against A\*), a closure that
+ends with no event of its own; same seed and config give the same log (timing fields removed), in full and
+independent mode.
+
+**Profile** (`python -m src.search.profile_replan`; small map, 8 vehicles x 4 stops, 600 disruptions/h, 1 h, 3
+seeds, one Linux machine, ms):
+
+| Decision | n | CPU median | CPU p95 | CPU max |
+| --- | --- | --- | --- | --- |
+| replan after a closure | 72 | 1.24 | 4.05 | 5.21 |
+| replan after a traffic spike | 21 | 0.38 | 1.01 | 1.55 |
+| route kept (hysteresis) | 328 | 0.74 | 1.87 | 8.31 |
+| negotiation detour (full mode) | 15 | 0.70 | 1.30 | 1.90 |
+| unreachable stop dropped (fresh rebuild) | 1 | 12.1 | | |
+
+All agent work is about 1.3 s CPU per simulated hour in full mode (0.15 s of it in logged replans, 0.31 s in kept
+decisions; the rest is re-reading watched roads and path extraction when nothing changes) and the coordination
+hook about 0.8 s, mostly bid pricing (two D\* Lite repairs per vehicle per auction). In cProfile of a full-mode run,
+D\* Lite is 32% of own time, R5's conflict check and auction 3%, and the simulator, R1's closure guard
+(`reachable_from`) and Python the rest. Replanning is not the bottleneck, so nothing was optimised.
