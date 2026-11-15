@@ -225,4 +225,3 @@ def test_kr6():
     assert not road_allowed(large, 1, 2, {"highway": "primary"}, T + 100, zones=[z])[0]
     assert road_allowed(large, 1, 2, {"highway": "primary"}, T + 4000, zones=[z])[0]  # after hours
     assert road_allowed(veh(), 1, 2, {"highway": "primary"}, T + 100, zones=[z])[0]  # small vehicle
-
