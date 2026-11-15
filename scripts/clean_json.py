@@ -32,4 +32,3 @@ with source.open("rb") as src, destination.open("wb") as dst:
 
 print("Package cleaning completed.")
 print("NaN values replaced:", count)
-
