@@ -155,3 +155,79 @@ def test_generator_on_real_profile(tmp_path):
     nodes = pd.DataFrame({"node": range(100), "x": range(100), "y": range(100)})
     orders = OrderSampler(Empirical(tmp_path), nodes).generate(100, seed=0)
     assert len(orders) == 100
+
+
+def test_fill_data_profile_on_sample(tmp_path):
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    doc = tmp_path / "doc.md"
+    doc.write_bytes((ROOT / "docs" / "data_profile.md").read_bytes())
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    text = doc.read_text(encoding="utf-8")
+    assert "___" not in text and "Routes profiled: 3 of 3 (all)" in text
+    assert "| Package volume (cm³) | 1,100 |" in text
+    assert "| Stops per route | 1 | 2 | 2 | 2 | 3 | 2 |" in text
+    assert "Share of stops with at least one windowed package: 33.3 %" in text
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0   # re-run is safe
+    assert doc.read_bytes().decode("utf-8").replace("\r\n", "\n") == text.replace("\r\n", "\n")
+
+
+def test_fill_data_profile_repairs_a_cp1252_doc(tmp_path):
+    """A doc saved in the Windows code page by the old script is read and rewritten as UTF-8."""
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    doc = tmp_path / "doc.md"
+    # what the old script left on Windows: untouched lines UTF-8, the line it wrote in cp1252
+    lines = ["# Data profile \u2014 Amazon", "- Download size of what we used: 454.4 MB \u00b7 "
+             "Routes profiled: 9 of 9 (all)", "| Package volume (cm\u00b3) | | | | | | |",
+             "- Share of packages with a time window: ___ %",
+             "- Share of stops with at least one windowed package: ___ %",
+             "- Is service time per package or repeated per stop? ___"]
+    encoded = [ln.encode("cp1252") if i == 1 else ln.encode("utf-8") for i, ln in enumerate(lines)]
+    doc.write_bytes(b"\n".join(encoded))
+    with pytest.raises(UnicodeDecodeError):
+        doc.read_bytes().decode("utf-8")
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    text = doc.read_bytes().decode("utf-8")              # valid UTF-8 again
+    assert "| Package volume (cm³) | 1,100 |" in text and "Routes profiled: 3 of 3 (all)" in text
+    assert text.startswith("# Data profile \u2014") and "___" not in text
+
+
+def test_fill_data_profile_windows_line_endings(tmp_path):
+    """A Windows checkout (\r\n endings): line endings are kept and a re-run changes nothing."""
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    doc = tmp_path / "doc.md"
+    text = fill.read_doc(ROOT / "docs" / "data_profile.md")
+    doc.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    first = doc.read_bytes()
+    assert b"\r\r" not in first and first.count(b"\r\n") == first.count(b"\n")
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    assert doc.read_bytes() == first
+
+
+def test_service_time_column_follows_the_data():
+    from src.data.orders_from_amazon import service_is_per_stop
+
+    same = pd.DataFrame({"route_id": "r", "stop_id": ["a", "a", "b", "b"],
+                         "service_s": [60.0, 60.0, 30.0, 30.0]})
+    varies = same.assign(service_s=[60.0, 20.0, 30.0, 10.0])
+    assert service_is_per_stop(same) and not service_is_per_stop(varies)
+    assert not service_is_per_stop(same.drop(columns="service_s"))
+    
