@@ -41,6 +41,8 @@ class DeliverySimEnvironment:
         self.orders: List[Order] = []
         self.subscribers: List[Callable[[Event], None]] = []
         self.finishers: List[Callable[[], Any]] = []
+        # Registered orders no vehicle was given; failed as no_vehicle at sim_start.
+        self.unassigned: List[Order] = []
         # vehicle id -> its undelivered orders (same list the vehicle process edits)
         self._pending: Dict[str, List[Order]] = {}
         self.n_delivered = 0
@@ -122,12 +124,13 @@ class DeliverySimEnvironment:
     # ------------------------------------------------------------------
     # Vehicle behaviour
     # ------------------------------------------------------------------
-    def _fail(self, vehicle: Vehicle, order: Order, reason: str) -> None:
+    def _fail(self, vehicle: Optional[Vehicle], order: Order, reason: str) -> None:
+        """Log order_failed; vehicle None = no vehicle had it (e.g. no bid)."""
         self.n_failed += 1
         self.log_event(
             "order_failed",
             {"order_id": order.id, "node": order.node, "reason": reason},
-            agent_id=vehicle.id,
+            agent_id=vehicle.id if vehicle is not None else "env",
         )
 
     def _serve_node(self, vehicle: Vehicle, pending: List[Order], deferred: Set[str]):
@@ -213,6 +216,15 @@ class DeliverySimEnvironment:
             self._fail(vehicle, order, reason)
         pending.clear()                   # nothing left to protect from closures
 
+    def _fail_unfinished(self) -> None:
+        """At the horizon, orders still pending on a vehicle are failed, so
+        every order ends delivered or failed (same reason as R4's runner).
+        Without this, a vehicle still driving at the end loses its orders."""
+        for vid, pending in self._pending.items():
+            for order in list(pending):
+                self._fail(self.vehicles[vid], order, "horizon_exceeded")
+            pending.clear()
+
     # ------------------------------------------------------------------
     # Run
     # ------------------------------------------------------------------
@@ -225,6 +237,9 @@ class DeliverySimEnvironment:
             "n_vehicles": len(self.vehicles),
             "n_orders": len(self.orders),
         })
+        for order in self.unassigned:     # no vehicle took it (e.g. config has no vehicles)
+            self._fail(None, order, "no_vehicle")
+        self.unassigned = []
         if self.disruption_rate > 0:
             gen = EventGenerator(
                 self.env, self.rng, self.world, self.handle_event,
@@ -235,6 +250,9 @@ class DeliverySimEnvironment:
             )
             self.env.process(gen.schedule_disruptions(self.disruption_rate, duration_seconds))
         self.env.run(until=duration_seconds)
+        # Only at the configured end: run() may be called in steps (run(5); run(40)).
+        if self.env.now >= float(self.config.get("duration_seconds", DEFAULT_DURATION_S)):
+            self._fail_unfinished()
         for callback in self.finishers:
             callback()
         self.log_event("sim_complete", {

@@ -68,8 +68,10 @@ def assign_orders(vehicles: List[Vehicle], orders: List[Order]) -> Dict[str, Lis
     """Give each order to the first vehicle whose route visits its node.
 
     TODO(R4/R5): replace with the real planner / allocation.
-    An order no route visits goes to the first vehicle, which logs it as
-    order_failed "not_on_route" at the end of its route.
+    An order no route visits goes to the first vehicle (R7's planner then
+    adds its stop). With no vehicles nothing is assigned; run.py fails those
+    orders as "no_vehicle". Orders blocked by capacity end as
+    "capacity_exceeded_unservable", unfinished ones as "horizon_exceeded".
     """
     assignment: Dict[str, List[Order]] = {v.id: [] for v in vehicles}
     for order in orders:
@@ -136,6 +138,10 @@ def build_simulation(config: Dict[str, Any], world=None) -> Tuple[Any, Optional[
     for vehicle in vehicles:
         planner.register(vehicle, assignment[vehicle.id])   # sets remaining_route
         env.add_vehicle(vehicle, assignment[vehicle.id])
+    # Every order must end delivered or failed: one no vehicle got (only
+    # possible with no vehicles) fails as no_vehicle right after sim_start.
+    given = {o.id for mine in assignment.values() for o in mine}
+    env.unassigned = [o for o in orders if o.id not in given]
     env.add_finisher(planner.finish)          # replan_summary before sim_complete
     return env, planner
 
