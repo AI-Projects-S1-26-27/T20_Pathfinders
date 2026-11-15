@@ -70,6 +70,95 @@ def close_road_at(env, u, v, after_s, duration_s=3600.0):
     env.env.process(proc())
 
 
+def endings(rows):
+    """order id -> every (event, reason) that ended it."""
+    out = {}
+    for r in rows:
+        if r["event"] in ("order_delivered", "order_failed"):
+            out.setdefault(r["payload"]["order_id"], []).append(
+                (r["event"], r["payload"].get("reason")))
+    return out
+
+
+# -- every order ends delivered or failed (PR #37 review) -------------------
+EMPTY_ROUTE_VEHICLES = [   # no hand-written routes: no order is on any route
+    {"id": "V1", "depot_node": 0, "capacity": 7.0, "route": []},
+    {"id": "V2", "depot_node": 0, "capacity": 7.0, "route": []},
+]
+THREE_ORDERS = [
+    {"id": "O1", "node": 2, "demand": 5.0, "service_time": 0.0},
+    {"id": "O2", "node": 8, "demand": 5.0, "service_time": 0.0},
+    {"id": "O3", "node": 6, "demand": 5.0, "service_time": 0.0},
+]
+
+
+@pytest.mark.parametrize("mode", ["independent", "full", "centralized"])
+def test_empty_routes_every_order_ends_once_with_a_reason(tmp_path, mode):
+    """Orders on no route, and more demand than one vehicle can carry: none is
+    lost, each ends exactly once, and every failure says why."""
+    if mode == "centralized":
+        pytest.importorskip("ortools")
+    cfg = config(tmp_path, mode, vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS)
+    rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
+    ends = endings(rows)
+    assert sorted(ends) == ["O1", "O2", "O3"]
+    assert all(len(e) == 1 for e in ends.values())          # never twice
+    failed = [e[0] for e in ends.values() if e[0][0] == "order_failed"]
+    assert all(reason for _, reason in failed)
+    done = rows[-1] if rows[-1]["event"] == "sim_complete" else \
+        next(r for r in reversed(rows) if r["event"] == "sim_complete")
+    assert done["payload"]["delivered"] + done["payload"]["failed"] == 3
+
+
+def test_empty_routes_capacity_blocked_orders_fail_with_reason(tmp_path):
+    """Route allocation (W4) gives every order to V1 (capacity 7, demand 5
+    each): one is delivered, the two it cannot carry fail as capacity."""
+    cfg = config(tmp_path, "independent", vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS)
+    rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
+    ends = endings(rows)
+    reasons = sorted(e[0][1] for e in ends.values() if e[0][0] == "order_failed")
+    assert reasons == ["capacity_exceeded_unservable"] * 2
+    assert sum(e[0][0] == "order_delivered" for e in ends.values()) == 1
+    assert any(r["event"] == "capacity_blocked" for r in rows)
+
+
+@pytest.mark.parametrize("mode", ["independent", "full"])
+def test_no_vehicles_orders_fail_as_no_vehicle(tmp_path, mode):
+    cfg = config(tmp_path, mode, vehicles=[], orders=THREE_ORDERS)
+    rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
+    assert rows[0]["event"] == "sim_start"
+    failed = [r for r in rows if r["event"] == "order_failed"]
+    assert sorted(r["payload"]["order_id"] for r in failed) == ["O1", "O2", "O3"]
+    assert {(r["payload"]["reason"], r["agent_id"]) for r in failed} == {("no_vehicle", "env")}
+    assert rows[-1]["payload"] == {"delivered": 0, "failed": 3}
+
+
+@pytest.mark.parametrize("mode", ["independent", "full"])
+def test_orders_still_on_a_vehicle_at_the_horizon_fail(tmp_path, mode):
+    """A vehicle still driving when time runs out must not lose its orders."""
+    cfg = config(tmp_path, mode, vehicles=EMPTY_ROUTE_VEHICLES[:1], duration_seconds=15.0)
+    rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))   # node 2 is 20 s away
+    failed = [r["payload"] for r in rows if r["event"] == "order_failed"]
+    assert sorted(f["order_id"] for f in failed) == ["O1", "O2"]
+    assert {f["reason"] for f in failed} == {"horizon_exceeded"}
+    assert rows[-1]["payload"] == {"delivered": 0, "failed": 2}
+
+
+def test_demo_warns_when_released_orders_are_unaccounted(capsys):
+    from src.sim.demo_modes import accounting_warning, print_table, released_orders
+
+    cfg = {"start_time_s": START, "duration_seconds": 600.0, "orders": [
+        {"release_time": 0.0}, {"release_time": START + 300.0}, {"release_time": START + 900.0}]}
+    assert released_orders(cfg) == 2                     # the third comes after the end
+    row = {"mode": "full", "delivered": 1, "failed": 0, "released": 2, "log": "x.jsonl"}
+    assert "1 order(s) neither delivered nor failed" in accounting_warning(row)
+    assert accounting_warning({**row, "failed": 1}) is None
+    print_table([{**{c: 0 for c in ("disruptions", "replans", "negotiation_msgs", "solves",
+                                    "alloc_msgs", "planning_cpu_s", "last_delivery_s",
+                                    "wall_s")}, **row}])
+    assert "WARNING (full)" in capsys.readouterr().err
+
+
 # -- config checks ----------------------------------------------------------
 def test_unknown_mode_raises(tmp_path):
     with pytest.raises(ValueError, match="mode must be one of"):
