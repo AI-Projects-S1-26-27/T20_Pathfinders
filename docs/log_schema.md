@@ -50,6 +50,7 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 | `capacity_exceeded_unservable` | was `capacity_blocked` and still undelivered at the end of the route |
 | `not_on_route` | the vehicle's route never reached the order's node |
 | `unreachable` | a closure cut the order's stop off; R7's planner failed it (`unreachable="fail"`, the default) and R4's `reassign` hook did not take it |
+| `no_vehicle` | no vehicle was given the order (the config has no vehicles); logged right after `sim_start`, `agent_id` `env` |
 | `no_feasible_bid` | contract-net (independent/full): no vehicle could insert the order (capacity, time window or unreachable); `agent_id` is `env` |
 | `horizon_exceeded` | still pending on a vehicle when the run ended (`duration_seconds`); logged by R1's environment just before `sim_complete`, and by R4's centralized runner. Every order now ends `order_delivered` or `order_failed` |
 

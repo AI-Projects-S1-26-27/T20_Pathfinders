@@ -41,6 +41,8 @@ class DeliverySimEnvironment:
         self.orders: List[Order] = []
         self.subscribers: List[Callable[[Event], None]] = []
         self.finishers: List[Callable[[], Any]] = []
+        # Registered orders no vehicle was given; failed as no_vehicle at sim_start.
+        self.unassigned: List[Order] = []
         # vehicle id -> its undelivered orders (same list the vehicle process edits)
         self._pending: Dict[str, List[Order]] = {}
         # W5: True = a vehicle that finishes its route waits for new orders
@@ -279,6 +281,9 @@ class DeliverySimEnvironment:
             # was R6's forecast available to planners (D10)? false = free-flow
             "predictor": getattr(self.world, "predictor", None) is not None,
         })
+        for order in self.unassigned:     # no vehicle took it (e.g. config has no vehicles)
+            self._fail(None, order, "no_vehicle")
+        self.unassigned = []
         if self.disruption_rate > 0:
             gen = EventGenerator(
                 self.env, self.rng, self.world, self.handle_event,
