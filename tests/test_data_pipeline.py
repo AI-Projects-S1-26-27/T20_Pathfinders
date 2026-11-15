@@ -155,3 +155,32 @@ def test_generator_on_real_profile(tmp_path):
     nodes = pd.DataFrame({"node": range(100), "x": range(100), "y": range(100)})
     orders = OrderSampler(Empirical(tmp_path), nodes).generate(100, seed=0)
     assert len(orders) == 100
+
+
+def test_fill_data_profile_on_sample(tmp_path):
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    doc = tmp_path / "doc.md"
+    doc.write_text((ROOT / "docs" / "data_profile.md").read_text())
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    text = doc.read_text()
+    assert "___" not in text and "Routes profiled: 3 of 3 (all)" in text
+    assert "| Stops per route | 1 | 2 | 2 | 2 | 3 | 2 |" in text
+    assert "Share of stops with at least one windowed package: 33.3 %" in text
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0   # re-run is safe
+    assert doc.read_text() == text
+
+
+def test_service_time_column_follows_the_data():
+    from src.data.orders_from_amazon import service_is_per_stop
+
+    same = pd.DataFrame({"route_id": "r", "stop_id": ["a", "a", "b", "b"],
+                         "service_s": [60.0, 60.0, 30.0, 30.0]})
+    varies = same.assign(service_s=[60.0, 20.0, 30.0, 10.0])
+    assert service_is_per_stop(same) and not service_is_per_stop(varies)
+    assert not service_is_per_stop(same.drop(columns="service_s"))

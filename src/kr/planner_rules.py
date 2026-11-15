@@ -22,7 +22,9 @@ Explanation trace in the run log:
 
     log_kr_trace(env_or_logger, t, vehicle_id, result)  # one "kr_check" row (R1's JSONL format)
 
-Nothing here edits R1/R2/R4/R7 code; the TODOs at the bottom name the one-line hook each owner adds.
+Nothing here edits R1/R2/R4/R7 code, and no module outside R3's imports this file yet. Who wires it
+in: R7 (replanner), R4 (feasibility hook / WorldTravel), R1 (simulator setup); see the TODOs at the
+bottom and the status table in docs/kr_planner_integration.md.
 Do not give a view to R1's environment itself: the environment moves vehicles on the real world.
 """
 

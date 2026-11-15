@@ -5,6 +5,21 @@ Code: `src/kr/planner_rules.py` · Tests: `tests/test_planner_rules.py`
 Three things the plan asks of R3 this week, and the one line each owner adds to use them.
 No R1/R2/R4/R7 file is changed by R3; every hook below is tested against the real classes.
 
+## Who plugs it in (status)
+
+`src/kr/planner_rules.py` is not imported by any code outside R3's own modules yet. R3 provides the
+pieces and their tests; each owner wires them into their module:
+
+| Owner | Where | What to add | Status |
+|---|---|---|---|
+| **R7** | `AgentPlanner.register` (D* Lite replanner) | build each `ReplanningAgent` on `rules.view(self.env.world, vehicle)`; when `stops is None`, use `priority_stops(vehicle, orders, travel, t)[0]` | not wired yet |
+| **R4** | `WorldTravel` / `ContractNet` / `CentralVRP` (feasibility hook) | `WorldTravel(rules.view(world, vehicle), now)` for paths; `feasibility=r4_feasibility_hook(travel)` (`src/kr/adapters.py`) for bids | not wired yet |
+| **R1** | `src/sim/run.py` (simulator setup) | build `RoadRules(world.graph(), zones_from_config(cfg))` once per run and hand it to the planners; call `log_kr_trace` where plans are made; add `kr_check` to `docs/log_schema.md` | not wired yet |
+| R2 | `astar` / `dijkstra` / `TravelTimeMatrix` callers | `cost_fn=rules.cost_fn(vehicle, base, t)` (no change to R2's code, the callers pass it) | available |
+
+Until R7, R4 and R1 wire these in, the rules apply in R3's tests and the audit (`docs/kr_audit.md`)
+checks every log after the fact, but planners do not yet avoid forbidden roads during a run.
+
 ## 1. Rules → blocked edges (KR-3 road class, KR-4 closures, KR-6 zones)
 
 Every planner already treats "cost is inf" or "`world.is_blocked(...)` is True" as a road it may not

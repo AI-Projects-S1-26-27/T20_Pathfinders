@@ -74,5 +74,16 @@ checks this against brute force on 25 random instances.
 - **Forward vs backward chaining:** the rule engine is forward chaining: it starts from the facts (orders, loads, ETAs)
   and derives violations. Backward chaining starts from a goal and works back, which suits "prove X" queries, not
   "what follows from these facts".
-- **Limits:** above 9 stops per vehicle the sequence check falls back to priority-first / EDF orders, which can say
-  "no" when a stop order exists (never a false "yes"). The global CSP is not used for 300 orders.
+- **Limits (measured, `docs/heuristic_gap.md`):** up to 9 stops per vehicle the sequence check is exact.
+  Above 9 it tries only the priority-first and earliest-deadline-first orders. It never accepts a route
+  that does not exist (0 of 1,800 instances), but it rejects some that do:
+
+  | Windows | 10 stops | 12 stops | 15 stops |
+  |---|---|---|---|
+  | wide (20-60 min) | 3.7% of feasible routes rejected | 13.0% | 26.2% |
+  | tight (10-30 min) | 12.8% | 22.3% | 44.4% |
+
+  300 instances per cell; ground truth from the exact search run past its limit. That exact search took at
+  most 8.3 ms (mean under 0.4 ms) even at 15 stops, so raising `EXACT_LIMIT` to 15 looks affordable;
+  it is left at 9 until the team agrees, because one bad instance could cost far more than the mean.
+  The global CSP is not used for 300 orders.

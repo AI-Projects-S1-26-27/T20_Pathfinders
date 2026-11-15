@@ -431,3 +431,34 @@ def test_real_map_runs_do_negotiate(tmp_path):
         auctions += hook.auctions
         yields += s["yields"]
     assert auctions >= 1 and yields >= 1
+
+
+# ---------------------------------------------------------------------------
+# R1 internals the planner reads (review of PR #27, item 5)
+# ---------------------------------------------------------------------------
+class _EnvWithout:
+    """R1's environment with one attribute hidden, as if R1 renamed it."""
+
+    def __init__(self, env, hidden):
+        self._env, self._hidden = env, hidden
+
+    def __getattr__(self, name):
+        if name == self._hidden:
+            raise AttributeError(name)
+        return getattr(self._env, name)
+
+
+@pytest.mark.parametrize("hidden", ["_pending", "_fail"])
+def test_missing_r1_internals_fail_loudly(tmp_path, hidden):
+    env = _EnvWithout(make_env(FakeWorld(grid_graph()), tmp_path), hidden)
+    for kwargs in ({"mode": "full", "coordination": lambda *a: 0, "unreachable": "wait"},
+                   {"mode": "independent"}):                       # "fail" is the default
+        with pytest.raises(AttributeError) as err:
+            AgentPlanner(env, **kwargs)
+        assert repr(hidden) in str(err.value) and "src/sim/environment.py" in str(err.value)
+
+
+def test_independent_wait_mode_does_not_need_r1_internals(tmp_path):
+    for hidden in ("_pending", "_fail"):
+        env = _EnvWithout(make_env(FakeWorld(grid_graph()), tmp_path), hidden)
+        assert AgentPlanner(env, mode="independent", unreachable="wait").mode == "independent"

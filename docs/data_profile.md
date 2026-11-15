@@ -1,6 +1,7 @@
 # Data profile — Amazon Last Mile Routing Research Challenge 2021
 
-Owner: R3 · Fill the numbers from `data/profile/summary.json` after running `src/data/profile_amazon.py`.
+Owner: R3 · After steps 1-3 below, `python scripts/fill_data_profile.py` writes every number in this file
+(the blanks and the Results table) from `data/profile/summary.json`.
 
 ## Source
 - Merchán et al. (2022), Amazon Last Mile Routing Research Challenge dataset, AWS Open Data.
@@ -8,7 +9,7 @@ Owner: R3 · Fill the numbers from `data/profile/summary.json` after running `sr
 - License: **CC BY-NC 4.0** — non-commercial use, credit Amazon.
 - Files used: `route_data.json`, `package_data.json` (training split, `model_build_inputs/`).
 - Files **not** used: `travel_times.json` (largest file; we use our own OSM travel times), `actual_sequences.json`, `invalid_sequence_scores.json`.
-- Download size of what we used: ___ MB · Routes profiled: ___ (all / subset of ___)
+- Download size of what we used: 454.4 MB � Routes profiled: 6,112 of 6,112 (all)
 
 ## How to get the data (run from the repo root)
 
@@ -47,16 +48,16 @@ Fields **ignored on purpose**: lat/lng (obfuscated, no geography transfers), zon
 
 | Statistic | p5 | p25 | median | p75 | p95 | mean |
 |---|---|---|---|---|---|---|
-| Stops per route | | | | | | |
-| Packages per stop | | | | | | |
+| Stops per route | 89 | 128 | 150 | 169 | 192 | 147 |
+| Packages per stop | 1.0 | 1.0 | 1.0 | 2.0 | 4.0 | 1.6 |
 | Package volume (cm³) | | | | | | |
-| Time-window width (h) | | | | | | |
-| Service time per stop (s) | | | | | | |
-| Capacity utilization | | | | | | |
+| Time-window width (h) | 4.00 | 7.00 | 8.00 | 8.50 | 23.98 | 9.00 |
+| Service time per stop (s) | 30 | 49 | 73 | 126 | 303 | 111 |
+| Capacity utilization | 49.9% | 63.0% | 73.7% | 85.5% | 97.8% | 74.0% |
 
-- Share of packages with a time window: ___ %
-- Share of stops with at least one windowed package: ___ %
-- Is service time per package or repeated per stop? ___ (check: compare `service_sum_s` vs `service_max_s`)
+- Share of packages with a time window: 7.8 %
+- Share of stops with at least one windowed package: 6.6 %
+- Is service time per package or repeated per stop? repeated per stop: at 98.6% of stops with several packages every package has the same value, so it is one stop-level time; the generator uses the per-stop value (`service_max_s`), not the sum
 
 Plots: `stops_per_route.png`, `packages_per_stop.png`, `package_volume.png`, `tw_width.png`, `service_time.png`.
 

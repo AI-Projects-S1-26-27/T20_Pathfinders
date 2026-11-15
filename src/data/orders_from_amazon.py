@@ -44,6 +44,15 @@ DYNAMIC_SHARE = 0.3  # ASSUMPTION (D3: dynamic order arrivals)
 AMAZON_ROUTE_H = 10.0  # Amazon window offsets are spread over a ~10 h route day
 
 
+def service_is_per_stop(pk: pd.DataFrame, threshold: float = 0.95) -> bool:
+    """True if at > threshold of the stops with several packages, all packages share one value."""
+    if "service_s" not in pk.columns:
+        return False
+    multi = pk.groupby(["route_id", "stop_id"])["service_s"].agg(["size", "nunique"])
+    multi = multi[multi["size"] > 1]
+    return bool(len(multi)) and bool((multi["nunique"] == 1).mean() > threshold)
+
+
 class Empirical:
     """The distributions we sample from, loaded from the profile CSVs."""
 
@@ -52,7 +61,12 @@ class Empirical:
         stops = pd.read_csv(d / "packages_per_stop.csv")
         pk = pd.read_csv(d / "packages.csv")
         self.packages_per_stop = stops["n_packages"].clip(lower=1).tolist()
-        self.service_s = stops["service_sum_s"].clip(lower=0).tolist()
+        # Service time: if every package at a stop carries the same value it is a stop-level time
+        # repeated on each package, so summing would multiply it by the package count; use the
+        # per-stop maximum then, else the per-stop sum (scripts/fill_data_profile.py reports which).
+        self.service_per_stop = service_is_per_stop(pk)
+        column = "service_max_s" if self.service_per_stop else "service_sum_s"
+        self.service_s = stops[column].clip(lower=0).tolist()
         self.volume = pk["volume_cm3"][pk["volume_cm3"] > 0].tolist()
         self.unit_cm3 = float(np.median(self.volume))
         tw = pk[pk["has_tw"].astype(bool)]
