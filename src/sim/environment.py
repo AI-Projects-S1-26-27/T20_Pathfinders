@@ -40,6 +40,7 @@ class DeliverySimEnvironment:
         self.vehicles: Dict[str, Vehicle] = {}
         self.orders: List[Order] = []
         self.subscribers: List[Callable[[Event], None]] = []
+        self.finishers: List[Callable[[], Any]] = []
         # vehicle id -> its undelivered orders (same list the vehicle process edits)
         self._pending: Dict[str, List[Order]] = {}
         self.n_delivered = 0
@@ -93,6 +94,11 @@ class DeliverySimEnvironment:
     def subscribe(self, callback: Callable[[Event], None]) -> None:
         """Register a listener for world events (disruption, new_order)."""
         self.subscribers.append(callback)
+
+    def add_finisher(self, callback: Callable[[], Any]) -> None:
+        """Run callback after the clock stops, before sim_complete is logged
+        (e.g. R7's planner.finish), so sim_complete stays the last row."""
+        self.finishers.append(callback)
 
     def handle_event(self, event: Event) -> None:
         self.logger.log(event.event_type, event.t, event.payload)
@@ -229,6 +235,8 @@ class DeliverySimEnvironment:
             )
             self.env.process(gen.schedule_disruptions(self.disruption_rate, duration_seconds))
         self.env.run(until=duration_seconds)
+        for callback in self.finishers:
+            callback()
         self.log_event("sim_complete", {
             "delivered": self.n_delivered,
             "failed": self.n_failed,

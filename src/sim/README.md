@@ -11,6 +11,44 @@ python -m src.sim.run --config configs/sim_default.yaml
 Writes `logs/<run_id>.jsonl` (schema: `docs/log_schema.md`). Without R6's data/torch you
 will see `Traffic model unavailable, using free-flow times` - this is expected.
 
+## Modes (W4)
+
+The config's `mode` picks the condition; `run.py` builds the matching simulation
+(`build_simulation(config, world=None)` returns `(env, planner)`):
+
+| mode | simulation | who decides routes |
+|------|------------|--------------------|
+| `centralized` | R4's `AllocationSimulation` (`src/allocation/sim_runner.py`) | R4 re-solves the whole fleet (OR-Tools) on every event and order arrival. Hand-written `route`s are ignored. |
+| `independent` | `DeliverySimEnvironment` + R7's `AgentPlanner` | each vehicle replans locally with D* Lite on every disruption; never negotiates. |
+| `full` | as `independent` + R5's `TriggerCoordination` | after every replan, R5's trigger (`ThresholdTrigger(tau)`) and Vickrey auction. |
+
+Optional config blocks (unknown keys raise, like `disruptions:`):
+
+```yaml
+planner:          # independent / full (R7)
+  unreachable: fail       # or wait
+  min_gain_s: 10.0        # hysteresis
+  min_gain_frac: 0.05
+coordination:     # full (R5)
+  tau: 600.0              # D6: negotiate iff time-to-conflict < tau (s)
+  rate_limit_s: 60.0
+  initial_credits: 100.0
+```
+
+In independent/full the initial assignment is still `assign_orders` (first vehicle whose
+route visits the order); R7's planner then routes each vehicle through its stops.
+R7's `replan_summary` is logged just before `sim_complete` (`env.add_finisher`).
+
+**Check-in demo**: one scenario, same seed, every mode, table from the logs:
+
+```bash
+python -m src.sim.demo_modes                         # configs/viz_demo.yaml, 3 modes
+python -m src.sim.demo_modes --modes independent full --rate 600   # force replans
+python -m src.sim.demo_modes --csv reports/checkin_modes.csv
+```
+
+Logs go to `logs/<run_id>_<mode>.jsonl` (R2's replay/multipane viewers read them).
+
 ## Files
 
 | file | what it does |
@@ -21,7 +59,8 @@ will see `Traffic model unavailable, using free-flow times` - this is expected.
 | `models.py` | `Order`, `Vehicle`, `Event` dataclasses. |
 | `logger.py` | `SimulationLogger`: 9-key JSONL lines. |
 | `interfaces.py` | Abstract `Planner`, `Predictor`, `Trigger`, `Negotiator`, `MetricsLogger`, and `Route`. |
-| `run.py` | Builds world/vehicles/orders from a YAML config and runs it. |
+| `run.py` | Builds world/vehicles/orders from a YAML config and runs it in the config's mode. |
+| `demo_modes.py` | W4 check-in demo: same scenario in centralized / independent / full, summary table. |
 | `scenarios.py` | `make_demo_config(world)` random demo config. |
 
 ## Clock
@@ -108,8 +147,10 @@ Prints a `cProfile` table sorted by cumulative time.
 
 - **R3 (orders)**: `env.add_order(order)`; `new_order` events only announce `dyn_N`
   for now (`TODO(R3)` in `events.py`). `Vehicle.current_load` is available for rules.
-- **R4/R5 (planning, negotiation)**: replace `assign_orders` in `run.py`
-  (`TODO(R4/R5)`); `Route(nodes, expected_times, order_ids)`; depot unloading.
+- **R4/R5 (planning, negotiation)**: wired in by the mode switch (above). Still open:
+  R4's contract-net for the initial assignment in independent/full (`TODO(R4)` in
+  `run.py`); depot unloading; `AllocationSimulation` logs `allocation_summary` after
+  `sim_complete` (could use `env.add_finisher`).
 - **R6 (traffic)**: `World.from_defaults` loads `TrafficModel` + `Predictor` when
   available; `TODO(R6)` in `world.py` to confirm the clock convention.
 - **R7 (triggers / re-routing)**: subscribe to `disruption` events; vehicles currently
