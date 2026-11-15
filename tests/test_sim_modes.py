@@ -83,6 +83,17 @@ def test_typo_in_block_raises(tmp_path, block):
         build_simulation(cfg, FakeWorld(grid_graph()))
 
 
+def test_predictor_switch(tmp_path):
+    world = FakeWorld(grid_graph())
+    world.predictor = object()                     # stands in for R6's Predictor
+    env, _ = build_simulation(config(tmp_path, "independent", predictor=False), world)
+    assert world.predictor is None
+    env.run(10.0)
+    assert read(env.log_path)[0]["payload"]["predictor"] is False
+    with pytest.raises(ValueError, match="predictor must be true or false"):
+        build_simulation(config(tmp_path, "independent", predictor="no"), FakeWorld(grid_graph()))
+
+
 # -- independent ------------------------------------------------------------
 def test_independent_uses_r7_planner_without_coordination(tmp_path):
     env, planner = build_simulation(config(tmp_path, "independent"), FakeWorld(grid_graph()))
@@ -108,6 +119,18 @@ def test_independent_replans_around_closure_and_ends_cleanly(tmp_path):
                    for r in rows)
 
 
+@pytest.mark.parametrize("mode", ["independent", "full"])
+def test_every_order_ends_delivered_or_failed_at_horizon(tmp_path, mode):
+    """A vehicle still driving when time runs out must not lose its orders."""
+    cfg = config(tmp_path, mode, duration_seconds=15.0)   # node 2 is 20 s away
+    path = run_from_config(cfg, world=FakeWorld(grid_graph()))
+    rows = read(path)
+    failed = [r["payload"] for r in rows if r["event"] == "order_failed"]
+    assert sorted(f["order_id"] for f in failed) == ["O1", "O2"]
+    assert {f["reason"] for f in failed} == {"horizon_exceeded"}
+    assert rows[-1]["payload"] == {"delivered": 0, "failed": 2}
+
+
 # -- full -------------------------------------------------------------------
 def test_full_wires_r5_trigger_with_config(tmp_path):
     cfg = config(tmp_path, "full", coordination={"tau": 123.0, "rate_limit_s": 5.0})
@@ -131,6 +154,7 @@ def test_full_negotiates_where_independent_does_not(tmp_path):
 
     Seed 1 is pinned because on so small a grid most seeds give no conflict
     after a replan (seeds 2-8 give none); the run itself is deterministic.
+    allocation "route" keeps the hand-written hub routes that set up the conflicts.
     """
     vehicles = [{"id": v, "depot_node": r[0], "capacity": 50.0, "route": r}
                 for v, r in HUB_ROUTES.items()]
@@ -139,7 +163,8 @@ def test_full_negotiates_where_independent_does_not(tmp_path):
     msgs = {}
     for mode in ("independent", "full"):
         cfg = config(tmp_path, mode, seed=1, vehicles=vehicles, orders=orders,
-                     disruption_rate_per_hour=600.0, coordination={"tau": 1e9})
+                     disruption_rate_per_hour=600.0, coordination={"tau": 1e9},
+                     allocation="route")
         env, planner = build_simulation(cfg, FakeWorld(grid_graph(5)))
         env.run(3600.0)
         msgs[mode] = planner.negotiation_messages

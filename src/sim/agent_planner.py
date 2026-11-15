@@ -265,6 +265,34 @@ class ReplanningAgent:
         path = fresh.planner.path()
         return self._switch(path, t_seconds, cpu0)
 
+    # -- R1 W5: new stop list (contract-net awarded or took an order) ----
+    def set_stops(self, stops: Sequence[Any], t_seconds: float,
+                  order_ids: Optional[Sequence[Any]] = None) -> Route:
+        """Plan from the planning start through these stops, in this order.
+
+        Same steps as drop_stops: a fresh multi-stop D* Lite from where the
+        vehicle can next decide, keeping the roads it watches and the roads
+        it agreed to keep off. If a stop cannot be reached, the vehicle keeps
+        its old route and an empty Route is returned (as in _choose), so the
+        caller can drop the cut-off stops (AgentPlanner._handle_unreachable).
+        """
+        cpu0 = self._start_clock()
+        old = self.replanner
+        fresh = VehicleReplanner(self.world, self.planning_start(), list(stops), t_seconds,
+                                 self.heuristic, list(order_ids) if order_ids else None)
+        fresh.watched |= old.watched
+        fresh.avoid = dict(old.avoid)
+        fresh.refresh(t_seconds)
+        self.replanner = fresh
+        path = fresh.planner.path()
+        if not path:
+            self.last_decision = "unreachable"
+            self.route = Route([], [], [])
+            self.n_replans += 1
+            self._spent(cpu0)
+            return self.route
+        return self._switch(path, t_seconds, cpu0)
+
     # -- W5: keep off a road after losing a negotiation ------------------
     def avoid_road(self, u: Any, v: Any, until_t: float, t_seconds: float
                    ) -> Optional[Route]:
@@ -410,6 +438,30 @@ class AgentPlanner(Planner):
                                 self.min_gain_s, self.min_gain_frac)
         self.agents[vehicle.id] = agent
         return agent.route
+
+    def set_stops(self, vid: str, orders: Sequence[Any], t: float) -> Route:
+        """Replace a vehicle's stops mid-run with its orders' nodes, in order
+        (R1 W5: R4's contract-net awarded it an order or took one away).
+
+        Logged as a ``replan`` row with trigger ``new_order``. A cut-off stop
+        goes through the unreachable policy; in full mode R5's hook runs on
+        the new route, as after any replan.
+        """
+        agent = self.agents[vid]
+        stops, ids = [], []
+        for o in orders:
+            if stops and stops[-1] == o.node:     # two orders at one stop
+                continue
+            stops.append(o.node)
+            ids.append(o.id)
+        start = agent.planning_start()
+        route = agent.set_stops(stops, t, ids)
+        self._log_replan(vid, agent, route, start, "new_order", None)
+        if not route.nodes and self.unreachable == "fail":
+            route = self._handle_unreachable(vid, agent, t)
+        if route.nodes:
+            self._after_replan(vid, route, t)
+        return route
 
     def plan(self, vehicles: List[Any], orders: List[Any]) -> Dict[str, Route]:
         """Planner interface: a Route per vehicle through the order nodes on

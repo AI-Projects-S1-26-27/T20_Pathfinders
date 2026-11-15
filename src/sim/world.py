@@ -33,6 +33,10 @@ class World:
         # edge -> list of (start_t, expiry_t, multiplier)
         self.spikes: Dict[EdgeId, List[Tuple[float, float, float]]] = {}
         self._warned_default_length = False
+        # The road graph is fixed for a run (R2's frozen map), so per-road static
+        # facts are computed once (W5 profiling: ~1M calls each per 20-vehicle run).
+        self._free_flow: Dict[EdgeId, float] = {}
+        self._fastest_key: Dict[Tuple[int, int], int] = {}
 
     def graph(self) -> nx.MultiDiGraph:
         return self.G
@@ -46,6 +50,12 @@ class World:
     # ------------------------------------------------------------------
     def free_flow_time(self, u, v, key: int = 0) -> float:
         """Seconds to drive the edge with no traffic."""
+        cached = self._free_flow.get((u, v, key))
+        if cached is None:
+            cached = self._free_flow[(u, v, key)] = self._compute_free_flow(u, v, key)
+        return cached
+
+    def _compute_free_flow(self, u, v, key: int) -> float:
         self._check_edge(u, v, key)
         data = self.G[u][v][key]
         if "free_flow_time" in data:          # set by R2's load_road_graph
@@ -65,9 +75,13 @@ class World:
 
     def edge_key(self, u, v) -> int:
         """Key of the fastest road u -> v (not always 0 on the real graph)."""
-        if not self.G.has_edge(u, v):
-            raise KeyError(f"Edge ({u}, {v}) not found in road graph.")
-        return min(self.G[u][v], key=lambda k: self.free_flow_time(u, v, k))
+        key = self._fastest_key.get((u, v))
+        if key is None:
+            if not self.G.has_edge(u, v):
+                raise KeyError(f"Edge ({u}, {v}) not found in road graph.")
+            key = min(self.G[u][v], key=lambda k: self.free_flow_time(u, v, k))
+            self._fastest_key[(u, v)] = key
+        return key
 
     # ------------------------------------------------------------------
     # Disruptions

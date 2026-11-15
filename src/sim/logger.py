@@ -30,6 +30,9 @@ class SimulationLogger(MetricsLogger):
         # "w" truncates any old log so each run starts clean.
         with open(self.log_path, file_mode, encoding="utf-8"):
             pass
+        # Kept open between rows (W5 profiling: reopening per row cost ~3 s
+        # per 20-vehicle run); every row is flushed, so a crash keeps them all.
+        self._file = None
 
     def log(
         self,
@@ -49,5 +52,20 @@ class SimulationLogger(MetricsLogger):
             "event": event_type,
             "payload": payload,
         }
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record) + "\n")
+        if self._file is None:
+            self._file = open(self.log_path, "a", encoding="utf-8")
+        self._file.write(json.dumps(record) + "\n")
+        self._file.flush()
+
+    def close(self) -> None:
+        """Release the file (needed on Windows before renaming it). Logging
+        again afterwards reopens it in append mode."""
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
