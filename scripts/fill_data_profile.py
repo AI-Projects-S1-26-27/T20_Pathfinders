@@ -102,16 +102,39 @@ def fill(doc: str, summary: dict, unit_answer: str) -> str:
     return doc
 
 
+def read_doc(path: Path) -> str:
+    """The doc as text, repairing what an earlier version of this script did on Windows: it read
+    and wrote in the Windows code page (cp1252), so untouched lines stayed UTF-8 while the lines it
+    wrote are cp1252. Each line is decoded as UTF-8 if it is valid UTF-8, else as cp1252."""
+    out = []
+    for line in path.read_bytes().split(b"\n"):
+        line = line.rstrip(b"\r")  # Windows checkouts use \r\n line endings
+        try:
+            out.append(line.decode("utf-8"))
+        except UnicodeDecodeError:
+            out.append(line.decode("cp1252"))
+    return "\n".join(out)
+
+
+def write_doc(path: Path, text: str, like: bytes) -> None:
+    """Write UTF-8 bytes directly, keeping the line ending the file had (\r\n on a Windows
+    checkout, \n otherwise). Writing bytes avoids Python's newline translation, so running the
+    script again never changes the file."""
+    newline = "\r\n" if b"\r\n" in like else "\n"
+    path.write_bytes(text.replace("\n", newline).encode("utf-8"))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--profile-dir", default="data/profile")
     ap.add_argument("--doc", default="docs/data_profile.md")
     a = ap.parse_args(argv)
     prof = Path(a.profile_dir)
-    summary = json.loads((prof / "summary.json").read_text())
+    summary = json.loads((prof / "summary.json").read_text(encoding="utf-8"))
     doc_path = Path(a.doc)
-    new = fill(doc_path.read_text(), summary, service_time_unit(prof / "packages.csv"))
-    doc_path.write_text(new)
+    original = doc_path.read_bytes()
+    new = fill(read_doc(doc_path), summary, service_time_unit(prof / "packages.csv"))
+    write_doc(doc_path, new, original)
     left = new.count("___")
     print(f"filled {doc_path} from {prof}/summary.json ({left} blanks left)")
     return 0 if left == 0 else 1

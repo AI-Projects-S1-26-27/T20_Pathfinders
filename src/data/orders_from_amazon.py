@@ -236,7 +236,7 @@ def main():
         "unit_cm3": emp.unit_cm3,
         "source": "Amazon Last Mile 2021 statistics (CC BY-NC 4.0)",
     }
-    with open(a.out, "w") as f:
+    with open(a.out, "w", encoding="utf-8") as f:
         json.dump({"meta": meta, "orders": [asdict(o) for o in orders]}, f, indent=1)
     print(f"wrote {len(orders)} orders to {a.out}")
     print("summary:", order_summary(orders))

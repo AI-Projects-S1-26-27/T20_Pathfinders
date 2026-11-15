@@ -257,7 +257,7 @@ def main():
                     cfg["scenario_meta"]["orders_unservable_alone"] = bad
                 suffix = f"_large{int(round(a.large_share * 100))}" if a.large_share > 0 else ""
                 path = out / f"{size}_{layout}{suffix}_s{seed}.yaml"
-                with open(path, "w") as f:
+                with open(path, "w", encoding="utf-8") as f:
                     yaml.safe_dump(cfg, f, sort_keys=False)
                 m = cfg["scenario_meta"]
                 print(

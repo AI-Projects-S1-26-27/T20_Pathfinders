@@ -60,7 +60,7 @@ def _stream_packages(path: Path, wanted: set):
 
 
 def profile(route_file: Path, package_file: Path, max_routes: int | None = None):
-    with open(route_file) as f:
+    with open(route_file, encoding="utf-8") as f:
         routes = json.load(f)
     route_ids = list(routes)[:max_routes] if max_routes else list(routes)
     wanted = set(route_ids)
@@ -170,7 +170,7 @@ def write_outputs(R, S, P, out: Path, plots: bool = True) -> dict:
     summary = summarise(R, S, P)
     if "n_routes_in_file" in R.attrs:
         summary["n_routes_in_file"] = int(R.attrs["n_routes_in_file"])
-    with open(out / "summary.json", "w") as f:
+    with open(out / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     if plots:
         import matplotlib
@@ -216,7 +216,7 @@ def main():
     summary = write_outputs(R, S, P, Path(a.out_dir))
     raw = [Path(a.route_file), Path(a.package_file.replace("cleaned", "raw"))]
     summary["download_mb"] = round(sum(p.stat().st_size for p in raw if p.exists()) / 1e6, 1)
-    with open(Path(a.out_dir) / "summary.json", "w") as f:
+    with open(Path(a.out_dir) / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     print(json.dumps(summary, indent=2))
     print(f"wrote CSVs, summary.json and plots to {a.out_dir}")
