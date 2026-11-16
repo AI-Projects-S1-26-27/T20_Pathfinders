@@ -53,6 +53,14 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 | `no_vehicle` | no vehicle was given the order (the config has no vehicles); logged right after `sim_start`, `agent_id` `env` |
 | `no_feasible_bid` | contract-net (independent/full): no vehicle could insert the order (capacity, time window or unreachable); `agent_id` is `env` |
 | `horizon_exceeded` | still pending on a vehicle when the run ended (`duration_seconds`); logged by R1's environment just before `sim_complete`, and by R4's centralized runner. Every order now ends `order_delivered` or `order_failed` |
+| `central_unassigned` | centralized (R4, `src/allocation/runtime.py`): the OR-Tools re-solve left the order out of every route |
+| `service_infeasible` | centralized (R4, `src/allocation/sim_runner.py`): the vehicle reached the order but its time window had passed or it would exceed capacity |
+
+`python -m src.sim.check_log <log> [--config <cfg>]` (R1, W6) checks a log against this page:
+keys, one `sim_start`/`sim_complete`, time order, each order ending once with a reason listed
+above, counts, and edge enter/exit pairs. In centralized mode R4's runner also writes
+`central_state_report`, `central_plan_broadcast` and, after `sim_complete`, `allocation_summary`
+(not yet described here: TODO(R4)).
 
 ## Events from R7's agent planner (`src/sim/agent_planner.py`, `src/sim/coordination_hook.py`)
 
