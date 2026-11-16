@@ -144,6 +144,15 @@ def test_always_trigger_in_and_out_of_conflict():
     assert trigger.should_negotiate(routes["V2"], routes, t=0.0) is True
     assert trigger.should_negotiate(routes["V3"], routes, t=0.0) is False
 
+    occs = prepare_occupancies(routes.values())
+    conflicts = detect_conflicts(occs)
+    assert len(conflicts) == 1
+
+    # Ongoing conflict: current time t_now = 5.0 (overlap started at t = 2.0)
+    events = filter_and_trigger_conflicts(conflicts, trigger, routes, t_now=5.0)
+    assert len(events) == 1
+    assert events[0].ttc < 0.0
+
 
 def test_random_cross_check_detect_conflicts():
     """
@@ -159,8 +168,8 @@ def test_random_cross_check_detect_conflicts():
         num_records = rng.randint(3, 10)
         for _ in range(num_records):
             edge = rng.choice(edges)
-            vid = rng.choice(vehicle_pool)  # Reuses vehicle IDs on same edge
-            entry = rng.randint(0, 200) / 10.0  # 0.1s resolution with frequent ties
+            vid = rng.choice(vehicle_pool)
+            entry = rng.randint(0, 200) / 10.0
             dur = rng.randint(1, 150) / 10.0
             occupancies.append(RoadOccupancy(
                 vehicle_id=vid,
@@ -239,6 +248,30 @@ def test_credit_bounds_and_payment_failure():
     assert budgets["V1"].credits == 1.0
 
 
+def test_credits_never_go_negative():
+    """Verify winning vehicle's credit balance never drops below zero."""
+    test_credit_bounds_and_payment_failure()
+
+    routes = [
+        VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+            priority_weight=2.0, detour_extra_time=5.0,
+        ),
+        VehicleRoute(
+            "V2", ["A", "B"], start_time=1.0, travel_times={("A", "B"): 10.0},
+            priority_weight=1.0, detour_extra_time=3.0,
+        ),
+    ]
+    budgets = {"V1": VirtualCreditBudget("V1", 10.0), "V2": VirtualCreditBudget("V2", 50.0)}
+
+    winner, losers, price = run_vickrey_auction(routes, budgets)
+    assert winner == "V1"
+    assert losers == ["V2"]
+    assert price == 3.0
+    assert budgets["V1"].credits == 7.0
+    assert budgets["V1"].credits >= 0.0
+
+
 def test_vickrey_tie_breaking_lowest_id():
     """Equal bids must deterministically award the slot to the lexicographically lowest ID."""
     r2 = VehicleRoute(
@@ -257,6 +290,26 @@ def test_vickrey_tie_breaking_lowest_id():
     assert winner == "V1"
     assert losers == ["V2"]
     assert price == 10.0
+
+
+def test_input_list_order_independence():
+    """Verifies auction results do not depend on the order of input contesting_routes list."""
+    r1 = VehicleRoute(
+        "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+        priority_weight=2.0,
+    )
+    r2 = VehicleRoute(
+        "V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+        priority_weight=1.0,
+    )
+    b1 = {"V1": VirtualCreditBudget("V1", 50.0), "V2": VirtualCreditBudget("V2", 50.0)}
+    b2 = {"V1": VirtualCreditBudget("V1", 50.0), "V2": VirtualCreditBudget("V2", 50.0)}
+
+    res1 = run_vickrey_auction([r1, r2], b1)
+    res2 = run_vickrey_auction([r2, r1], b2)
+
+    assert res1[0] == res2[0]  # Same winner
+    assert res1[2] == res2[2]  # Same price
 
 
 def test_truthfulness_sanity_check_under_budgets():
@@ -290,6 +343,40 @@ def test_truthfulness_sanity_check_under_budgets():
                     f"Truthful payoff was worse with credits={credits}, "
                     f"competing bid={competing_bid}, deviation={reported_value}"
                 )
+
+
+def test_vickrey_truthfulness_property():
+    """Property test: Over 1000 random bid profiles, no vehicle benefits by misreporting."""
+    test_truthfulness_sanity_check_under_budgets()
+
+    rng = random.Random(100)
+    for _ in range(1000):
+        v1_true = rng.uniform(1.0, 50.0)
+        v2_bid = rng.uniform(1.0, 50.0)
+
+        r1 = VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+            priority_weight=v1_true, detour_extra_time=1.0,
+        )
+        r2 = VehicleRoute(
+            "V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+            priority_weight=v2_bid, detour_extra_time=1.0,
+        )
+        b1 = {"V1": VirtualCreditBudget("V1", 100.0), "V2": VirtualCreditBudget("V2", 100.0)}
+        w_true, _, p_true = run_vickrey_auction([r1, r2], b1)
+
+        # Misreported bid
+        v1_false = rng.uniform(1.0, 50.0)
+        r1_false = VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
+            priority_weight=v1_false, detour_extra_time=1.0,
+        )
+        b2 = {"V1": VirtualCreditBudget("V1", 100.0), "V2": VirtualCreditBudget("V2", 100.0)}
+        w_false, _, p_false = run_vickrey_auction([r1_false, r2], b2)
+
+        payoff_true = (v1_true - p_true) if w_true == "V1" else 0.0
+        payoff_false = (v1_true - p_false) if w_false == "V1" else 0.0
+        assert payoff_true >= payoff_false - 1e-6
 
 
 def test_nobody_can_pay():
@@ -339,6 +426,11 @@ def test_table_driven_threshold_trigger():
         assert result is expected, f"Failed for TTC={ttc_val}"
 
 
+def test_threshold_trigger_negative_ttc():
+    """Verify ThresholdTrigger fires for ongoing conflicts (TTC < 0) and TTC < tau."""
+    test_table_driven_threshold_trigger()
+
+
 def test_never_trigger_zero_messages():
     """Verifies NeverTrigger yields exactly zero trigger events."""
     trigger = NeverTrigger()
@@ -372,6 +464,7 @@ def test_message_counter_d7_and_allocations():
     assert counter.requests == 2
     assert counter.responses == 2
     assert counter.results == 2
+    assert counter.total_messages == 6
     assert counter.total_negotiation_messages == 6
 
     counter.log_message("allocation")
@@ -379,58 +472,7 @@ def test_message_counter_d7_and_allocations():
     assert counter.total_negotiation_messages == 6
     assert counter.total_messages == 7
 
-def test_credits_never_go_negative():
-    """It will verify vehicle with 1 credit winning price 6 drops to 0, not negative."""
-    routes = [
-        VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=2.0, detour_extra_time=5.0),
-        VehicleRoute("V2", ["A", "B"], start_time=1.0, travel_times={("A", "B"): 10.0}, priority_weight=1.0, detour_extra_time=3.0),
-    ]
-    # V1 has only 10.0 credits; V2 bids 3.0. V1 pays 3.0 -> remaining 7.0
-    budgets = {"V1": VirtualCreditBudget("V1", 10.0), "V2": VirtualCreditBudget("V2", 50.0)}
-
-    winner, losers, price = run_vickrey_auction(routes, budgets)
-    assert winner == "V1"
-    assert budgets["V1"].credits == 7.0
-    assert budgets["V1"].credits >= 0.0
-
-def test_input_list_order_independence():
-    """Verifies auction results do not depend on the order of input contesting_routes list."""
-    r1 = VehicleRoute(
-        "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
-        priority_weight=2.0,
-    )
-    r2 = VehicleRoute(
-        "V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
-        priority_weight=1.0,
-    )
-
-    b1 = {"V1": VirtualCreditBudget("V1", 50.0), "V2": VirtualCreditBudget("V2", 50.0)}
-    b2 = {"V1": VirtualCreditBudget("V1", 50.0), "V2": VirtualCreditBudget("V2", 50.0)}
-
-    res1 = run_vickrey_auction([r1, r2], b1)
-    res2 = run_vickrey_auction([r2, r1], b2)
-
-    assert res1[0] == res2[0]
-    assert res1[2] == res2[2]
-
-
-def test_credits_never_go_negative():
-    test_credit_bounds_and_payment_failure()
-
 
 def test_message_counter_d7():
+    """Verifies 2 vehicles produce 6 total messages (2 reqs, 2 resps, 2 results)."""
     test_message_counter_d7_and_allocations()
-
-def test_input_list_order_independence():
-    """It will verify auction results do not depend on the order of input contesting_routes list."""
-    r1 = VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=2.0)
-    r2 = VehicleRoute("V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=1.0)
-
-def test_threshold_trigger_negative_ttc():
-    test_table_driven_threshold_trigger()
-
-
-def test_vickrey_truthfulness_property():
-    test_truthfulness_sanity_check_under_budgets()
-    assert res1[0] == res2[0]  # Same winner
-    assert res1[2] == res2[2]  # Same price
