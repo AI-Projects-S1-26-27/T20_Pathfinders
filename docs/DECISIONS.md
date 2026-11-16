@@ -22,3 +22,4 @@ Defaults taken from the project plan; change a line here if the team decides oth
 * **Directed Edge Conflicts:** Edges are directed `(u, v)`; `A->B` and `B->A` do not conflict with each other.
 * **Ongoing Conflict Triggering:** A conflict that has already started ($\text{TTC} < 0$) still triggers negotiation under `ThresholdTrigger`.
 * **Negotiation Result Counting (D7):** The negotiation result is sent to every involved vehicle and counted once per recipient (`3m` total negotiation messages for `m` vehicles).
+* **R5 Metric Comparability:** Results from the updated directed-edge, capacity-overload, and delta-t conflict definition are not directly comparable to R8 results produced with the earlier conflict detector; rerun both conditions with the same definition before comparing.

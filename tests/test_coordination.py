@@ -53,6 +53,29 @@ def test_simultaneous_exit_and_entry_boundary():
     assert bf_res == []
 
 
+def test_simultaneous_exit_entry_while_overloaded():
+    """
+    Tie regression check (capacity 1):
+    V1 [0, 20), V2 [0, 10), V3 [10, 20) -> V2 leaves and V3 enters at t=10
+    while V1 keeps the road overloaded -> must merge into {V1, V2, V3} [0, 20).
+    """
+    occs = [
+        RoadOccupancy("V1", ("A", "B"), entry_time=0.0, exit_time=20.0),
+        RoadOccupancy("V2", ("A", "B"), entry_time=0.0, exit_time=10.0),
+        RoadOccupancy("V3", ("A", "B"), entry_time=10.0, exit_time=20.0),
+    ]
+    caps = {("A", "B"): 1}
+    sweep_res = detect_conflicts(occs, edge_capacities=caps, delta_t=0.0)
+    bf_res = verify_conflicts_brute_force(occs, edge_capacities=caps, delta_t=0.0)
+
+    assert sweep_res == bf_res
+    assert len(sweep_res) == 1
+    assert sweep_res[0].edge == ("A", "B")
+    assert sweep_res[0].vehicles == {"V1", "V2", "V3"}
+    assert sweep_res[0].overlap_start == 0.0
+    assert sweep_res[0].overlap_end == 20.0
+
+
 def test_invalid_inputs_rejected():
     """Negative delta_t and non-positive edge capacities must raise ValueError."""
     occs = [RoadOccupancy("V1", ("A", "B"), entry_time=0.0, exit_time=5.0)]
@@ -123,26 +146,31 @@ def test_always_trigger_in_and_out_of_conflict():
 
 
 def test_random_cross_check_detect_conflicts():
-    """500 random trial cross-check comparing edges, vehicle sets, start and end."""
-    random.seed(42)
-    nodes = ["A", "B", "C", "D"]
+    """
+    3000-trial random cross-check with reused vehicle IDs, dense edges,
+    and 0.1s-quantized times so simultaneous EXIT/ENTRY ties happen frequently.
+    """
+    rng = random.Random(42)
+    edges = [("A", "B"), ("B", "C")]
+    vehicle_pool = ["V0", "V1", "V2", "V3", "V4"]
 
-    for trial in range(500):
+    for trial in range(3000):
         occupancies = []
-        num_vehicles = random.randint(2, 6)
-        for i in range(num_vehicles):
-            u, v = random.sample(nodes, 2)
-            entry = float(random.randint(0, 20))
-            dur = float(random.randint(5, 15))
+        num_records = rng.randint(3, 10)
+        for _ in range(num_records):
+            edge = rng.choice(edges)
+            vid = rng.choice(vehicle_pool)  # Reuses vehicle IDs on same edge
+            entry = rng.randint(0, 200) / 10.0  # 0.1s resolution with frequent ties
+            dur = rng.randint(1, 150) / 10.0
             occupancies.append(RoadOccupancy(
-                vehicle_id=f"V{i}",
-                edge=(u, v),
+                vehicle_id=vid,
+                edge=edge,
                 entry_time=entry,
-                exit_time=entry + dur,
+                exit_time=round(entry + dur, 1),
             ))
 
-        caps = {("A", "B"): random.randint(1, 3), ("B", "C"): random.randint(1, 3)}
-        dt = random.choice([0.0, 10.0, 25.0])
+        caps = {e: rng.randint(1, 2) for e in edges}
+        dt = rng.choice([0.0, 0.5, 1.0, 2.5])
         sweep_res = detect_conflicts(occupancies, edge_capacities=caps, delta_t=dt)
         bf_res = verify_conflicts_brute_force(occupancies, edge_capacities=caps, delta_t=dt)
 
@@ -371,3 +399,19 @@ def test_input_list_order_independence():
 
     assert res1[0] == res2[0]
     assert res1[2] == res2[2]
+
+
+def test_credits_never_go_negative():
+    test_credit_bounds_and_payment_failure()
+
+
+def test_message_counter_d7():
+    test_message_counter_d7_and_allocations()
+
+
+def test_threshold_trigger_negative_ttc():
+    test_table_driven_threshold_trigger()
+
+
+def test_vickrey_truthfulness_property():
+    test_truthfulness_sanity_check_under_budgets()

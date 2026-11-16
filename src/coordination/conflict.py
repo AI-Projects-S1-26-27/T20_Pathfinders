@@ -72,12 +72,14 @@ def prepare_occupancies(routes: Iterable[VehicleRoute]) -> List[RoadOccupancy]:
             if u == v:
                 raise ValueError("A route cannot contain a self-loop")
             duration = get_edge_time(route.travel_times, u, v)
-            occupancies.append(RoadOccupancy(
-                vehicle_id=route.vehicle_id,
-                edge=(u, v),
-                entry_time=current_time,
-                exit_time=current_time + duration,
-            ))
+            occupancies.append(
+                RoadOccupancy(
+                    vehicle_id=route.vehicle_id,
+                    edge=(u, v),
+                    entry_time=current_time,
+                    exit_time=current_time + duration,
+                )
+            )
             current_time += duration
 
     return occupancies
@@ -131,7 +133,7 @@ def detect_conflicts(
             events.append((start_t, "ENTRY", u))
             events.append((end_t, "EXIT", u))
 
-        # Process EXIT (0) before ENTRY (1) at identical timestamps to avoid 0-duration clashes
+        # Sort by timestamp ascending; within identical timestamps, process EXIT before ENTRY
         events.sort(key=lambda x: (x[0], 0 if x[1] == "EXIT" else 1))
 
         active_occupancies: Set[RoadOccupancy] = set()
@@ -140,37 +142,45 @@ def detect_conflicts(
         accumulated_vehicles: Set[str] = set()
         accumulated_occupancies: List[RoadOccupancy] = []
 
-        for t, event_type, occ in events:
-            if event_type == "ENTRY":
-                active_occupancies.add(occ)
-                active_vehicles = {o.vehicle_id for o in active_occupancies}
-                if len(active_vehicles) > k_e:
-                    if not in_overload:
-                        in_overload = True
-                        overload_start = t
-                        accumulated_vehicles = active_vehicles
-                        accumulated_occupancies = list(active_occupancies)
-                    else:
-                        accumulated_vehicles.update(active_vehicles)
-                        accumulated_occupancies.extend(active_occupancies)
-            else:
-                if in_overload:
-                    accumulated_vehicles.update(o.vehicle_id for o in active_occupancies)
+        # Batch all EXIT and ENTRY events sharing the exact same timestamp t
+        # before evaluating whether an overload started, persisted, or ended.
+        idx = 0
+        n_events = len(events)
+        while idx < n_events:
+            t = events[idx][0]
+            while idx < n_events and events[idx][0] == t:
+                _, event_type, occ = events[idx]
+                if event_type == "ENTRY":
+                    active_occupancies.add(occ)
+                else:
+                    active_occupancies.discard(occ)
+                idx += 1
+
+            active_vehicles = {o.vehicle_id for o in active_occupancies}
+            if len(active_vehicles) > k_e:
+                if not in_overload:
+                    in_overload = True
+                    overload_start = t
+                    accumulated_vehicles = set(active_vehicles)
+                    accumulated_occupancies = list(active_occupancies)
+                else:
+                    accumulated_vehicles.update(active_vehicles)
                     accumulated_occupancies.extend(active_occupancies)
-                active_occupancies.discard(occ)
-                if in_overload and len({o.vehicle_id for o in active_occupancies}) <= k_e:
-                    in_overload = False
-                    if t > overload_start:
-                        earliest = min(o.entry_time for o in accumulated_occupancies)
-                        conflicts.append(Conflict(
+            elif in_overload:
+                in_overload = False
+                if t > overload_start:
+                    earliest = min(o.entry_time for o in accumulated_occupancies)
+                    conflicts.append(
+                        Conflict(
                             edge=edge,
                             vehicles=set(accumulated_vehicles),
                             overlap_start=overload_start,
                             overlap_end=t,
                             earliest_arrival=earliest,
-                        ))
-                    accumulated_vehicles = set()
-                    accumulated_occupancies = []
+                        )
+                    )
+                accumulated_vehicles = set()
+                accumulated_occupancies = []
 
     return sorted(conflicts, key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)))
 
@@ -226,13 +236,15 @@ def verify_conflicts_brute_force(
             elif overload_start is not None:
                 assert overload_end is not None
                 earliest = min(u.entry_time for u in period_occupancies)
-                conflicts.append(Conflict(
-                    edge=edge,
-                    vehicles=period_vehicles,
-                    overlap_start=overload_start,
-                    overlap_end=overload_end,
-                    earliest_arrival=earliest,
-                ))
+                conflicts.append(
+                    Conflict(
+                        edge=edge,
+                        vehicles=period_vehicles,
+                        overlap_start=overload_start,
+                        overlap_end=overload_end,
+                        earliest_arrival=earliest,
+                    )
+                )
                 overload_start = None
                 overload_end = None
                 period_vehicles = set()
@@ -241,12 +253,14 @@ def verify_conflicts_brute_force(
         if overload_start is not None:
             assert overload_end is not None
             earliest = min(u.entry_time for u in period_occupancies)
-            conflicts.append(Conflict(
-                edge=edge,
-                vehicles=period_vehicles,
-                overlap_start=overload_start,
-                overlap_end=overload_end,
-                earliest_arrival=earliest,
-            ))
+            conflicts.append(
+                Conflict(
+                    edge=edge,
+                    vehicles=period_vehicles,
+                    overlap_start=overload_start,
+                    overlap_end=overload_end,
+                    earliest_arrival=earliest,
+                )
+            )
 
     return sorted(conflicts, key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)))
