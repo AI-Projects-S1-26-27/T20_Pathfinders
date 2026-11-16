@@ -47,13 +47,14 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from src.sim.check_log import check_rows
 from src.sim.demo_modes import COLUMNS as METRIC_COLUMNS, read_log, summarize
 from src.sim.run import MODES
 
 SWEEP_KEYS = {"sweep_id", "configs", "modes", "seeds", "rates", "predictor",
               "overrides", "out_dir", "workers"}
 RESULT_COLUMNS = (["run_id", "scenario", "seed", "rate", "predictor", "status"]
-                  + METRIC_COLUMNS + ["config_hash", "log"])
+                  + METRIC_COLUMNS + ["log_errors", "config_hash", "log"])
 
 
 @dataclass(frozen=True)
@@ -190,8 +191,14 @@ def execute(spec: RunSpec) -> Dict[str, Any]:
         config["log_path"] = paths["log"] + ".part"
         part = run_from_config(config)
         os.replace(part, paths["log"])
-        metrics = summarize(read_log(paths["log"]), spec.mode, time.perf_counter() - t0)
-        row = {**base, **metrics, "status": "done", "config_hash": digest, "log": paths["log"]}
+        rows = read_log(paths["log"])
+        metrics = summarize(rows, spec.mode, time.perf_counter() - t0)
+        # W6: R1's log checker; errors are kept in the done marker, counted in results.csv
+        log_errors, _ = check_rows(rows, config)
+        row = {**base, **metrics, "status": "done", "log_errors": len(log_errors),
+               "config_hash": digest, "log": paths["log"]}
+        if log_errors:
+            row["log_error_list"] = log_errors[:20]
         _write_atomic(paths["done"], json.dumps(row, indent=1))
         if os.path.exists(paths["failed"]):
             os.remove(paths["failed"])
@@ -269,6 +276,12 @@ def main() -> None:
     write_results(rows, os.path.join(out_dir, "results.csv"))
     failed = [r for r in results if r["status"] == "failed"]
     print(f"{len(rows)}/{len(specs)} runs done; results: {os.path.join(out_dir, 'results.csv')}")
+    flagged = [r["run_id"] for r in rows if r.get("log_errors")]
+    if flagged:
+        print(f"{len(flagged)} run(s) finished with log errors (log_errors column; details in "
+              f"{out_dir}/done/<run_id>.json, or python -m src.sim.check_log <log>):")
+        for run_id in flagged:
+            print("  " + run_id)
     if failed:
         print(f"{len(failed)} failed this launch (tracebacks in {out_dir}/failed/; "
               "launch again to retry):")
