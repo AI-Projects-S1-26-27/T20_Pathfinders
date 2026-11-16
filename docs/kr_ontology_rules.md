@@ -61,13 +61,19 @@ assumptions (the Amazon data has no priorities): `PRIORITY_SPLIT`, `DYNAMIC_SHAR
 | KR-10 | Every vehicle must be back at its depot by shift_end. | H | `rules.py`, needs travel times |
 | KR-10a | Shift duration: even with zero travel, all service must end before shift_end. | H | `rules.py` (no travel times needed) |
 | KR-11 | An order cannot be assigned or served before its release_time. | H | `rules.py` |
-| KR-12 | Each order is served exactly once, by exactly one vehicle. | H | allocation audit, TODO(R4/R5) |
+| KR-12 | Each order is served exactly once, by exactly one vehicle. | H | checked in every log by `audit.py`; allocation side TODO(R4/R5) |
 | KR-13 | Express (priority 1) stops come before priority 2 and 3, unless that breaks a hard time rule. | S | `rules.py`; planners via `planner_rules.priority_stops` |
 | KR-13x | If the priority order breaks KR-8/KR-10, retry earliest deadline first. | override | `rules.py` |
 | KR-13y | If that fails too, search every stop order (up to 9 stops). | override | `rules.py` -> `csp.find_sequence` |
 | KR-14 | An express order must be assigned within X minutes of release, otherwise it is re-auctioned. | S | TODO(R4) |
 | KR-15 | If no vehicle can serve an order, mark it `rejected` with the rule(s) that blocked every vehicle. | H | `violated_rules()` gives the reasons; marking TODO(R4) |
 | KR-16 | When a new closure invalidates a planned route, the vehicle must replan before continuing. | H | TODO(R7) |
+
+**Coverage (Week 5).** `tests/test_rule_coverage.py` has one passing and one blocking case for every rule
+above except KR-14 and KR-16, which belong to R4 and R7. It fails if a rule is added to the engine or to
+this table without both cases. `src/kr/audit.py` re-checks KR-1, KR-3, KR-4, KR-5, KR-6, KR-7, KR-8, KR-9, KR-11 and
+KR-12 on every simulation log; it does not check KR-10/KR-10a (no `shift_end` in R1's vehicles or the
+scenario files), see `docs/kr_audit.md`.
 
 ## 3. Conflict resolution between rules
 
