@@ -267,15 +267,6 @@ class DeliverySimEnvironment:
                 self._fail(self.vehicles[vid], order, "horizon_exceeded")
             pending.clear()
 
-    def _fail_unfinished(self) -> None:
-        """At the horizon, orders still pending on a vehicle are failed, so
-        every order ends delivered or failed (same reason as R4's runner).
-        Without this, a vehicle still driving at the end loses its orders."""
-        for vid, pending in self._pending.items():
-            for order in list(pending):
-                self._fail(self.vehicles[vid], order, "horizon_exceeded")
-            pending.clear()
-
     # ------------------------------------------------------------------
     # Run
     # ------------------------------------------------------------------
