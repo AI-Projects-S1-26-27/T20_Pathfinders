@@ -118,3 +118,15 @@ def test_report_renders_every_section():
     for heading in ("### A1.", "### A2.", "### B1.", "### B2."):
         assert heading in text
     assert "| KR-1 | capacity | 1 |" in text and "KR-15): 1 of 2" in text
+
+
+def test_distinct_closures_are_counted_once_per_seed():
+    from src.kr.rejection_stats import _distinct_closures
+
+    b2 = [{"scenario": "small_uniform_s0", "closures": 2, "closure_ids": ["1-2", "3-4"],
+           "changed_closure_ids": ["1-2"]},
+          {"scenario": "large_hotspot_s0", "closures": 2, "closure_ids": ["1-2", "3-4"],
+           "changed_closure_ids": ["1-2", "3-4"]},
+          {"scenario": "small_uniform_s1", "closures": 1, "closure_ids": ["1-2"],
+           "changed_closure_ids": []}]
+    assert _distinct_closures(b2) == (3, 2)   # seed 0: two closures, both hit; seed 1: one, none

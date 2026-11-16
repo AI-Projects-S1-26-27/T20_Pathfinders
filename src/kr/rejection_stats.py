@@ -223,6 +223,10 @@ def closure_effect(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
     return {
         "scenario": name,
         "closures": disrupt.get("closure", 0),
+        # identities, so the report can count distinct closures: within one seed every
+        # scenario sees the same disruption timeline
+        "closure_ids": sorted(f"{e[0]}-{e[1]}" for e in closed),
+        "changed_closure_ids": sorted(f"{e[0]}-{e[1]}" for e in hit & closed),
         "traffic_spikes": disrupt.get("traffic_spike", 0),
         "closures_that_changed_a_route": len(hit & closed),
         "replans_changed_by_closure": replan.get("closure", 0),
@@ -298,6 +302,29 @@ def _pct(n, d):
     return f"{100 * n / d:.1f}%" if d else "n/a"
 
 
+def _distinct_closures(B2) -> tuple:
+    """(distinct closures, distinct closures that changed a route in at least one scenario).
+
+    A closure is identified by its seed and its road; scenarios of the same seed share closures.
+    """
+    seen, hit = set(), set()
+    for r in B2:
+        seed = r["scenario"].rsplit("_s", 1)[-1]
+        seen |= {(seed, c) for c in r.get("closure_ids", [])}
+        hit |= {(seed, c) for c in r.get("changed_closure_ids", [])}
+    return len(seen), len(hit & seen)
+
+
+def _distinct_closure_lines(B2) -> list:
+    n, k = _distinct_closures(B2)
+    pairs = sum(r["closures"] for r in B2)
+    changed_pairs = sum(r.get("closures_that_changed_a_route", 0) for r in B2)
+    return [
+        f"Distinct closures: **{n}**; **{k} of {n}** changed some vehicle's route in at least "
+        f"one scenario. Closure-scenario pairs: {pairs}, of which {changed_pairs} changed a route."
+    ]
+
+
 def _kr15_rules(A) -> dict:
     total = Counter()
     for s in A:
@@ -328,11 +355,7 @@ def _rule_table(A) -> list[str]:
         f"{_pct(rejected, tot['checked'])} | |",
         "",
         f"Orders no vehicle could take (KR-15): {kr15} of {orders}"
-        + (
-            f"; main blocking rule: {_kr15_rules(A)}"
-            if kr15
-            else ""
-        )
+        + (f"; main blocking rule: {_kr15_rules(A)}" if kr15 else "")
         + ".",
         "",
     ]
@@ -370,7 +393,10 @@ def report(res: dict) -> str:
         "## A. How often a rule blocks an insertion",
         "",
         "Every order is offered to every vehicle (planning-time view, see the module docstring); "
-        "a rejected pair is attributed to the rule the rule engine reports.",
+        "a rejected pair is attributed to the rule the rule engine reports. The split between "
+        "rules depends on how the scenarios were built (fleet capacity sized so total demand is "
+        "80% of it) and on the greedy assignment used here (least extra time, in release "
+        "order); another allocator would fill vehicles differently.",
         "",
         "### A1. Scenarios as committed (no shift end)",
         "",
@@ -383,7 +409,9 @@ def report(res: dict) -> str:
             f"### A2. Sensitivity: every vehicle due back at its depot by {hh:02d}:00",
             "",
             "The committed scenarios set no shift end (KR-10 cannot bind there). This run adds "
-            f"one at {hh:02d}:00, the end of the simulated period, to show what KR-10 would do.",
+            f"one at {hh:02d}:00, the end of the simulated period, to show what KR-10 would do. "
+            "Only this one shift end was tested; an earlier one is a tighter limit and would "
+            "block at least as many checks.",
             "",
         ]
         out += _rule_table(res["part_a_shift_end"])
@@ -421,11 +449,13 @@ def report(res: dict) -> str:
         out += [
             "### B2. Closures (KR-4) in the simulator",
             "",
-            f"R1's simulator with R7's planner, stand-in driver, {res['rate']:g} disruptions per "
-            "hour, closure rows only. A closure changes a route only if it lies on a vehicle's "
-            "remaining route; one closure can make several vehicles re-check (kept) their route. "
-            "The disruption timeline depends on the seed, so every seed-0 scenario sees the same "
-            "closures.",
+            f"R1's simulator with R7's planner and {res['rate']:g} disruptions per hour. The "
+            "routes come from the stand-in driver of scripts/run_audit_demo.py, not from R4's "
+            "allocation, so these counts will change once allocation is wired in. The "
+            "disruption timeline depends only on the seed, so the scenarios of one seed share "
+            "the same closures: a row counts closure-scenario pairs, not distinct closures.",
+            "",
+            *_distinct_closure_lines(res["part_b2"]),
             "",
             "| Scenario | Closures | Closures that changed a route | Routes changed | Route "
             "checks that kept the route | Vehicles waiting at a closed road | Audit violations |",

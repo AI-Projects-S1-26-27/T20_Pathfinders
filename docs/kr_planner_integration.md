@@ -54,7 +54,9 @@ R3's rules use the *most restrictive* class of a merged edge (and R2's `road_cla
 present). On the Secunderabad map this only matters for merged edges. Using `rules.view` in
 `WorldTravel` makes both modes plan on the same roads. TODO(R4).
 
-**What it means on the real map.** 78% of Secunderabad's roads are residential. A large vehicle
+**What it means on the real map.** 81.3% of Secunderabad's directed roads (4,922 of 6,056) are closed
+to large vehicles: residential, living_street, service and unclassified together (`reports/rule_rejections.md`,
+part B1). A large vehicle
 can reach only 675 of 2,377 nodes (the largest strongly connected part of the non-narrow roads).
 That is why the fleet is small-only by default (D2), and why mixed fleets put depots on that part.
 
