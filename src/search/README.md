@@ -409,3 +409,49 @@ decisions; the rest is re-reading watched roads and path extraction when nothing
 hook about 0.8 s, mostly bid pricing (two D\* Lite repairs per vehicle per auction). In cProfile of a full-mode run,
 D\* Lite is 32% of own time, R5's conflict check and auction 3%, and the simulator, R1's closure guard
 (`reachable_from`) and Python the rest. Replanning is not the bottleneck, so nothing was optimised.
+
+## Replan rate and latency analysis, and the unreachable-stops fix (R7, Week 7)
+Code: `src/search/replan_analysis.py`; fix in `src/sim/agent_planner.py` (`drop_stops`, `_feasible_order`).
+Tests: `tests/test_replan_analysis.py` (7), 4 new in `tests/test_agent_planner_w5.py`.
+
+**Fix: unreachable stops were over-dropped (Weeks 5-6).** When one stop was cut off only from the stop before it
+(that stop became a dead end once a road closed), the cascade dropped it and every stop after it. On
+`medium_clustered_s9` at 20 disruptions/h, one closure dropped about 115 stops the vehicle could still reach, failed
+their orders, and crashed R1's environment (`list.remove`: the order being served was removed). Now a stop is dropped
+only if the vehicle cannot reach it at all from where it can next decide; other stops are moved to where they fit
+(`stop_unreachable.reordered`), and an order at the vehicle's current node is never failed. Both bug tests fail on
+the old code.
+
+**Analysis.** `python -m src.search.replan_analysis "logs/*.jsonl"` reads any R1 logs that have R7's
+`replan_summary` and writes `reports/replan_runs.csv` (one row per run), `reports/replan_summary.csv` (per mode and
+disruption rate: mean and 95% CI over runs; latency percentiles pooled) and `reports/figures/F_replan_rate_latency.png`.
+Route changes are counted by kind: disruption repairs (`closure`, `traffic_spike`), new-order rebuilds
+(`new_order`), negotiation detours, unreachable drops; latency uses `wall_seconds` (the Windows CPU timer is too
+coarse, Week 6), split into **D\* Lite repair** (closure, spike, detour) and **fresh rebuild** (new order,
+unreachable). `--pilot` makes small logs from R3's scenario configs at D11's rates.
+
+**Pilot** (`reports/replan_pilot_summary.csv`, `reports/figures/F_replan_rate_latency_pilot.png`; `small` x
+`uniform`/`clustered`/`hotspot`, pilot seeds 7-9, rates 0/2/5/10/20 per hour, independent and full, 90 runs, R4's
+contract-net from PR #38 merged locally, one Linux machine). This is not the experiment:
+
+| | per run-hour (10 vehicles) |
+| --- | --- |
+| route changes from closures and spikes | 0 at 0-5/h, 0.06 at 10/h, 0.03 at 20/h (3 in 90 runs) |
+| new-order rebuilds | 9.14 at every rate (orders released during the run) |
+| negotiation detours (full) | 0.72-0.78 |
+| D\* Lite repair latency | median 0.22-0.25 ms, p95 0.45-1.46 ms |
+| fresh rebuild latency | median 21-25 ms, p95 96-140 ms |
+
+What this says: a D\* Lite repair is about 100x cheaper than planning the route again, which is the reason for
+using it. But in these scenarios disruptions rarely change a route: on a map of about 6,000 roads, a random closure
+or spike seldom lands on a road a vehicle is about to drive (218 closures and 287 spikes in the 9 runs at 20/h led to
+3 route changes), and with contract-net the vehicles finish their orders in about 42 minutes on average. So "replans
+per hour vs disruption rate" is nearly flat; route changes are driven by new orders, not by disruptions.
+
+For the team (main sweep):
+1. D11's "new order" disruptions do not create orders yet: at 20/h, 210 `new_order` events in 9 runs, none with a
+   node, none delivered or failed (R1's event generator). So 30% of D11's disruptions currently do nothing.
+2. With `run.py`'s route assignment (before #38) every order goes to one vehicle (100 of 100 in `small_*`, 187 of
+   200 in `medium_clustered_s9`), so most orders fail `horizon_exceeded`. Use contract-net (#38) or centralized.
+3. For replans to depend on the disruption rate, disruptions would have to target roads that vehicles use (for
+   example roads on current routes); otherwise expect the flat curve above. A decision for R1 and R8.
