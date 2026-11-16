@@ -108,6 +108,33 @@ laptop:
 
 Under the profiler the independent run is ~38 s; the plain wall time is above.
 
+## Determinism and log checks (W6)
+
+**Same config + seed = same log**, in every mode, apart from CPU / wall-clock timings
+(payload keys ending in `cpu_seconds` / `wall_seconds`). `tests/test_determinism.py` checks it
+in one process, in two processes with different `PYTHONHASHSEED` (as the launcher's workers
+are), and through the launcher's `results.csv`. Checked by hand as well, same hash for every
+`PYTHONHASHSEED` tried: viz_demo at `--rate 300` (independent, full), viz_demo at 10/h
+(centralized) and R3's `large_uniform_s0` (full, 17,108 rows). If you add randomness, draw it
+from the run's seeded generator (`env.rng`, or a `random.Random(seed)` of your own), never from
+`random` / `np.random` module functions, and do not let the order of a `set` decide anything.
+
+**Log checker**: is a log complete and consistent?
+
+```bash
+python -m src.sim.check_log logs/sim_demo.jsonl
+python -m src.sim.check_log runs/pilot/logs                       # every log in a folder
+python -m src.sim.check_log logs/x.jsonl --config configs/x.yaml  # + every order accounted
+```
+
+Errors (exit 1): not the nine keys in order; run_id/mode/seed/scenario/rate changing; not
+exactly one `sim_start` (first) and one `sim_complete`; rows after `sim_complete` (except R4's
+`allocation_summary`); time going backwards or outside the run; an order ending twice or failing
+with an unknown reason; `sim_complete` counts not matching the rows; a vehicle entering a road
+before leaving the last one; with `--config`, a released order that never ended. Event names not
+in `docs/log_schema.md` are only warnings. The launcher runs it on every finished run: column
+`log_errors` in `results.csv` (details in `done/<run_id>.json`), and lists flagged runs at the end.
+
 ## Files
 
 | file | what it does |
@@ -122,6 +149,7 @@ Under the profiler the independent run is ~38 s; the plain wall time is above.
 | `demo_modes.py` | W4 check-in demo: same scenario in centralized / independent / full, summary table. |
 | `launcher.py` | W5 sweep launcher: parallel, seed-controlled, resumable runs + `results.csv`. |
 | `dispatch.py` | W5: R4's contract-net hands out orders in independent/full (D8), incl. orders released mid-run. |
+| `check_log.py` | W6: checks a run's JSONL log is complete and consistent (CLI; used by the launcher). |
 | `scenarios.py` | `make_demo_config(world)` random demo config. |
 
 ## Clock
