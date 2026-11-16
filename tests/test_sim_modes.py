@@ -92,28 +92,32 @@ THREE_ORDERS = [
 ]
 
 
-@pytest.mark.parametrize("mode", ["independent", "full", "centralized"])
-def test_empty_routes_every_order_ends_once_with_a_reason(tmp_path, mode):
+@pytest.mark.parametrize("mode, allocation", [
+    ("independent", "contract_net"), ("full", "contract_net"),
+    ("independent", "route"), ("full", "route"), ("centralized", None),
+])
+def test_empty_routes_every_order_ends_once_with_a_reason(tmp_path, mode, allocation):
     """Orders on no route, and more demand than one vehicle can carry: none is
     lost, each ends exactly once, and every failure says why."""
     if mode == "centralized":
         pytest.importorskip("ortools")
-    cfg = config(tmp_path, mode, vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS)
+    extra = {"allocation": allocation} if allocation else {}
+    cfg = config(tmp_path, mode, vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS, **extra)
     rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
     ends = endings(rows)
     assert sorted(ends) == ["O1", "O2", "O3"]
     assert all(len(e) == 1 for e in ends.values())          # never twice
     failed = [e[0] for e in ends.values() if e[0][0] == "order_failed"]
     assert all(reason for _, reason in failed)
-    done = rows[-1] if rows[-1]["event"] == "sim_complete" else \
-        next(r for r in reversed(rows) if r["event"] == "sim_complete")
+    done = next(r for r in reversed(rows) if r["event"] == "sim_complete")
     assert done["payload"]["delivered"] + done["payload"]["failed"] == 3
 
 
 def test_empty_routes_capacity_blocked_orders_fail_with_reason(tmp_path):
     """Route allocation (W4) gives every order to V1 (capacity 7, demand 5
     each): one is delivered, the two it cannot carry fail as capacity."""
-    cfg = config(tmp_path, "independent", vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS)
+    cfg = config(tmp_path, "independent", vehicles=EMPTY_ROUTE_VEHICLES, orders=THREE_ORDERS,
+                 allocation="route")
     rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
     ends = endings(rows)
     reasons = sorted(e[0][1] for e in ends.values() if e[0][0] == "order_failed")
@@ -123,25 +127,16 @@ def test_empty_routes_capacity_blocked_orders_fail_with_reason(tmp_path):
 
 
 @pytest.mark.parametrize("mode", ["independent", "full"])
-def test_no_vehicles_orders_fail_as_no_vehicle(tmp_path, mode):
-    cfg = config(tmp_path, mode, vehicles=[], orders=THREE_ORDERS)
+@pytest.mark.parametrize("allocation, reason", [("route", "no_vehicle"),
+                                                ("contract_net", "no_feasible_bid")])
+def test_no_vehicles_orders_fail_with_reason(tmp_path, mode, allocation, reason):
+    cfg = config(tmp_path, mode, vehicles=[], orders=THREE_ORDERS, allocation=allocation)
     rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))
     assert rows[0]["event"] == "sim_start"
     failed = [r for r in rows if r["event"] == "order_failed"]
     assert sorted(r["payload"]["order_id"] for r in failed) == ["O1", "O2", "O3"]
-    assert {(r["payload"]["reason"], r["agent_id"]) for r in failed} == {("no_vehicle", "env")}
+    assert {(r["payload"]["reason"], r["agent_id"]) for r in failed} == {(reason, "env")}
     assert rows[-1]["payload"] == {"delivered": 0, "failed": 3}
-
-
-@pytest.mark.parametrize("mode", ["independent", "full"])
-def test_orders_still_on_a_vehicle_at_the_horizon_fail(tmp_path, mode):
-    """A vehicle still driving when time runs out must not lose its orders."""
-    cfg = config(tmp_path, mode, vehicles=EMPTY_ROUTE_VEHICLES[:1], duration_seconds=15.0)
-    rows = read(run_from_config(cfg, world=FakeWorld(grid_graph())))   # node 2 is 20 s away
-    failed = [r["payload"] for r in rows if r["event"] == "order_failed"]
-    assert sorted(f["order_id"] for f in failed) == ["O1", "O2"]
-    assert {f["reason"] for f in failed} == {"horizon_exceeded"}
-    assert rows[-1]["payload"] == {"delivered": 0, "failed": 2}
 
 
 def test_demo_warns_when_released_orders_are_unaccounted(capsys):
@@ -172,6 +167,17 @@ def test_typo_in_block_raises(tmp_path, block):
         build_simulation(cfg, FakeWorld(grid_graph()))
 
 
+def test_predictor_switch(tmp_path):
+    world = FakeWorld(grid_graph())
+    world.predictor = object()                     # stands in for R6's Predictor
+    env, _ = build_simulation(config(tmp_path, "independent", predictor=False), world)
+    assert world.predictor is None
+    env.run(10.0)
+    assert read(env.log_path)[0]["payload"]["predictor"] is False
+    with pytest.raises(ValueError, match="predictor must be true or false"):
+        build_simulation(config(tmp_path, "independent", predictor="no"), FakeWorld(grid_graph()))
+
+
 # -- independent ------------------------------------------------------------
 def test_independent_uses_r7_planner_without_coordination(tmp_path):
     env, planner = build_simulation(config(tmp_path, "independent"), FakeWorld(grid_graph()))
@@ -197,6 +203,18 @@ def test_independent_replans_around_closure_and_ends_cleanly(tmp_path):
                    for r in rows)
 
 
+@pytest.mark.parametrize("mode", ["independent", "full"])
+def test_every_order_ends_delivered_or_failed_at_horizon(tmp_path, mode):
+    """A vehicle still driving when time runs out must not lose its orders."""
+    cfg = config(tmp_path, mode, duration_seconds=15.0)   # node 2 is 20 s away
+    path = run_from_config(cfg, world=FakeWorld(grid_graph()))
+    rows = read(path)
+    failed = [r["payload"] for r in rows if r["event"] == "order_failed"]
+    assert sorted(f["order_id"] for f in failed) == ["O1", "O2"]
+    assert {f["reason"] for f in failed} == {"horizon_exceeded"}
+    assert rows[-1]["payload"] == {"delivered": 0, "failed": 2}
+
+
 # -- full -------------------------------------------------------------------
 def test_full_wires_r5_trigger_with_config(tmp_path):
     cfg = config(tmp_path, "full", coordination={"tau": 123.0, "rate_limit_s": 5.0})
@@ -220,6 +238,7 @@ def test_full_negotiates_where_independent_does_not(tmp_path):
 
     Seed 1 is pinned because on so small a grid most seeds give no conflict
     after a replan (seeds 2-8 give none); the run itself is deterministic.
+    allocation "route" keeps the hand-written hub routes that set up the conflicts.
     """
     vehicles = [{"id": v, "depot_node": r[0], "capacity": 50.0, "route": r}
                 for v, r in HUB_ROUTES.items()]
@@ -228,7 +247,8 @@ def test_full_negotiates_where_independent_does_not(tmp_path):
     msgs = {}
     for mode in ("independent", "full"):
         cfg = config(tmp_path, mode, seed=1, vehicles=vehicles, orders=orders,
-                     disruption_rate_per_hour=600.0, coordination={"tau": 1e9})
+                     disruption_rate_per_hour=600.0, coordination={"tau": 1e9},
+                     allocation="route")
         env, planner = build_simulation(cfg, FakeWorld(grid_graph(5)))
         env.run(3600.0)
         msgs[mode] = planner.negotiation_messages
