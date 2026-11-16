@@ -93,7 +93,8 @@ def test_clean_log_has_no_violations():
     [
         ("KR-12", CLEAN + deliver("V", T + 400, "b", 2)),
         ("NODE", drive("V", T, 0, 1) + deliver("V", T + 200, "a", 2)),
-        ("KR-11", drive("V", T, 0, 1) + drive("V", T + 10, 1, 2) + deliver("V", T + 70, "b", 2)),
+        # arrives at node 2 at T+20; service (60 s) starts T+40: after arrival, before release T+50
+        ("KR-11", drive("V", T, 0, 1) + drive("V", T + 10, 1, 2) + deliver("V", T + 100, "b", 2)),
         ("KR-7", drive("V", T, 0, 1) + deliver("V", T + 100, "a", 1)),
         ("KR-8", drive("V", T, 0, 1) + deliver("V", T + 700, "a", 1)),
         (
@@ -121,6 +122,8 @@ def test_clean_log_has_no_violations():
             + drive("V", T + 100, 0, 1),
         ),
         ("PATH", drive("V", T, 0, 1) + drive("V", T + 20, 0, 1)),
+        # arrives at node 1 at T+160; 60 s service ending T+200 started at T+140
+        ("KR-9", drive("V", T + 150, 0, 1) + deliver("V", T + 200, "a", 1)),
     ],
 )
 def test_each_check_catches_its_violation(rule, rows):
@@ -267,3 +270,38 @@ def test_markdown_table_totals():
     reps = [audit_log(CLEAN, CFG), audit_log(CLEAN + deliver("V", T + 400, "b", 2), CFG)]
     last = markdown(reps).splitlines()[-1]
     assert last.startswith("| **all runs** | 1 |") and last.endswith("| 1 |")
+
+
+def test_wrong_way_road_needs_the_map():
+    rows = [row(T, "V", "edge_enter", edge=[1, 0, 0], expected_duration=10.0),
+            row(T + 10, "V", "edge_exit", node=0)]
+    cfg = dict(CFG, vehicles=[{"id": "V", "depot_node": 1, "current_node": 1, "capacity": 6.0}])
+    assert counts(rows, cfg, G=graph())["KR-5"] == 1        # only 0 -> 1 exists
+    assert counts(rows, cfg)["KR-5"] == 0                    # no map: not checked
+    assert counts(drive("V", T, 0, 1), G=graph())["KR-5"] == 0
+
+
+def test_service_after_arrival_is_fine():
+    rows = drive("V", T + 100, 0, 1) + deliver("V", T + 200, "a", 1)   # arrived 110, start 140
+    assert counts(rows)["KR-9"] == 0
+
+
+def test_audit_demo_is_reproducible(tmp_path):
+    """scripts/run_audit_demo.py on a committed real-data scenario: clean, and the same twice."""
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("demo", root / "scripts" / "run_audit_demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    outs = []
+    for k in (1, 2):
+        js = tmp_path / f"r{k}.json"
+        args = ["--scenarios", "small_clustered_s0", "--log-dir", str(tmp_path / f"logs{k}"),
+                "--md", str(tmp_path / f"r{k}.md"), "--json", str(js)]
+        assert demo.main(args) == 0
+        outs.append(json.loads(js.read_text(encoding="utf-8")))
+    assert outs[0] == outs[1]
+    r = outs[0][0]
+    assert r["total_violations"] == 0 and r["checked"]["KR-4"] > 1000 and r["delivered"] > 0

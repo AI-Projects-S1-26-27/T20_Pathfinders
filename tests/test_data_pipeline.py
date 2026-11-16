@@ -1,270 +1,233 @@
-"""R3 Week 5: constraint-violation audit. A real R1 run with disruptions must audit clean, and every
-check must catch a violation planted in a log (one positive and one negative case each)."""
+"""R3 data pipeline: clean_json -> profile_amazon -> order generator.
+
+The sample in tests/fixtures/amazon_sample always runs. Tests on the real Amazon download skip
+when data/raw / data/cleaned are missing (CI never has them).
+"""
 
 import json
+import random
+import shutil
+import subprocess
+import sys
+from dataclasses import asdict
+from pathlib import Path
 
-import networkx as nx
+import pandas as pd
 import pytest
-import yaml
 
-from src.kr.audit import audit_log, find_config, main, markdown, read_log
-from src.kr.ontology import SIM_START_S as T
+from src.data.orders_from_amazon import Empirical, OrderSampler, order_summary
+from src.data.profile_amazon import profile, write_outputs
+from src.kr.ontology import NO_TW_END, NO_TW_START, SIM_END_S, SIM_START_S, tw_of
+from src.sim.run import build_order
 
-CFG = {
-    "run_id": "r",
-    "scenario": "toy",
-    "seed": 3,
-    "vehicles": [
-        {"id": "V", "depot_node": 0, "current_node": 0, "capacity": 6.0},
-        {
-            "id": "L",
-            "depot_node": 0,
-            "current_node": 0,
-            "capacity": 5.0,
-            "allowed_road_classes": ["primary", "secondary"],
-        },
-    ],
-    "orders": [
-        {
-            "id": "a",
-            "node": 1,
-            "demand": 3.0,
-            "service_time": 60.0,
-            "release_time": T,
-            "tw_start": T + 100,
-            "tw_end": T + 500,
-        },
-        {"id": "b", "node": 2, "demand": 3.0, "service_time": 60.0, "release_time": T + 50},
-    ],
-    "kr_zones": [{"id": "z", "nodes": [2], "start": T, "end": T + 3600}],
-}
-
-
-def graph():
-    G = nx.MultiDiGraph()
-    G.add_edge(0, 1, key=0, highway="primary")
-    G.add_edge(1, 2, key=0, highway="residential")
-    G.add_edge(1, 2, key=1, highway="primary")
-    return G
-
-
-def row(t, agent, event, **payload):
-    return {
-        "run_id": "r",
-        "scenario": "toy",
-        "seed": 3,
-        "t": t,
-        "agent_id": agent,
-        "event": event,
-        "payload": payload,
-    }
-
-
-def drive(agent, t, u, v, key=0):
-    return [
-        row(t, agent, "edge_enter", edge=[u, v, key], expected_duration=10.0),
-        row(t + 10, agent, "edge_exit", node=v),
-    ]
-
-
-def deliver(agent, t, oid, node, demand=3.0):
-    return [row(t, agent, "order_delivered", order_id=oid, node=node, demand=demand)]
-
-
-CLEAN = (
-    drive("V", T, 0, 1)
-    + deliver("V", T + 200, "a", 1)
-    + drive("V", T + 210, 1, 2)
-    + deliver("V", T + 300, "b", 2)
+ROOT = Path(__file__).resolve().parents[1]
+SAMPLE = ROOT / "tests" / "fixtures" / "amazon_sample"
+REAL_ROUTES = ROOT / "data" / "raw" / "route_data.json"
+REAL_PACKAGES = ROOT / "data" / "cleaned" / "package_data.json"
+needs_real_data = pytest.mark.skipif(
+    not (REAL_ROUTES.exists() and REAL_PACKAGES.exists()),
+    reason="Amazon data not downloaded/cleaned (see docs/data_profile.md)",
 )
 
 
-def counts(rows, cfg=CFG, G=None):
-    return audit_log(rows, cfg, G).counts()
+def test_clean_json_replaces_nan(tmp_path):
+    # .txt on purpose: it holds bare NaN like the real download (not valid JSON)
+    raw = tmp_path / "data" / "raw"
+    raw.mkdir(parents=True)
+    shutil.copy(SAMPLE / "package_data_raw.txt", raw / "package_data.json")
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "clean_json.py")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "NaN values replaced: 14" in out.stdout
+    cleaned = json.loads((tmp_path / "data" / "cleaned" / "package_data.json").read_text())
+    assert cleaned == json.loads((SAMPLE / "package_data.json").read_text())
 
 
-def test_clean_log_has_no_violations():
-    rep = audit_log(CLEAN, CFG, graph())
-    assert rep.ok and rep.checked["KR-8"] == 1 and rep.checked["KR-4"] == 2
+def test_profile_on_sample(tmp_path):
+    R, S, P = profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json")
+    assert sorted(R["n_stops"]) == [1, 2, 3]  # Station stops are not counted
+    assert len(S) == 6 and len(P) == 9
+    assert P["has_tw"].sum() == 2
+    assert P.loc[P["has_tw"], "tw_width_h"].tolist() == [3.0, 4.0]
+    assert P.loc[P["has_tw"], "tw_start_after_dep_h"].tolist() == [2.0, 1.5]
+    summary = write_outputs(R, S, P, tmp_path, plots=False)
+    assert summary["share_stops_with_any_tw"] == round(2 / 6, 4)
+    assert (tmp_path / "packages.csv").exists()
 
 
-@pytest.mark.parametrize(
-    "rule,rows",
-    [
-        ("KR-12", CLEAN + deliver("V", T + 400, "b", 2)),
-        ("NODE", drive("V", T, 0, 1) + deliver("V", T + 200, "a", 2)),
-        ("KR-11", drive("V", T, 0, 1) + drive("V", T + 10, 1, 2) + deliver("V", T + 70, "b", 2)),
-        ("KR-7", drive("V", T, 0, 1) + deliver("V", T + 100, "a", 1)),
-        ("KR-8", drive("V", T, 0, 1) + deliver("V", T + 700, "a", 1)),
-        (
-            "KR-1",
-            CLEAN[:0]
-            + drive("V", T, 0, 1)
-            + deliver("V", T + 200, "a", 1)
-            + drive("V", T + 210, 1, 2)
-            + deliver("V", T + 300, "b", 2, demand=3.5),
-        ),
-        (
-            "KR-4",
-            [
-                row(
-                    T,
-                    "env",
-                    "disruption",
-                    type="closure",
-                    edge=[0, 1, 0],
-                    magnitude=None,
-                    duration=600.0,
-                    expiry=T + 600,
-                )
-            ]
-            + drive("V", T + 100, 0, 1),
-        ),
-        ("PATH", drive("V", T, 0, 1) + drive("V", T + 20, 0, 1)),
-    ],
-)
-def test_each_check_catches_its_violation(rule, rows):
-    c = counts(rows)
-    assert c[rule] >= 1, c
-    assert sum(c.values()) == c[rule], f"only {rule} should fire: {c}"
+def test_profile_max_routes(tmp_path):
+    R, _, _ = profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json", max_routes=2)
+    assert len(R) == 2
 
 
-def test_closure_only_counts_while_active():
-    closure = [
-        row(
-            T,
-            "env",
-            "disruption",
-            type="closure",
-            edge=[0, 1, 0],
-            magnitude=None,
-            duration=60.0,
-            expiry=T + 60,
-        )
-    ]
-    assert counts(closure + drive("V", T + 60, 0, 1))["KR-4"] == 0  # expiry is exclusive
-    assert counts(closure + drive("V", T + 59, 0, 1))["KR-4"] == 1
-    other_key = [
-        row(
-            T,
-            "env",
-            "disruption",
-            type="closure",
-            edge=[1, 2, 1],
-            magnitude=None,
-            duration=600.0,
-            expiry=T + 600,
-        )
-    ]
-    assert counts(other_key + drive("V", T, 0, 1) + drive("V", T + 20, 1, 2, key=0))["KR-4"] == 0
+@pytest.fixture(scope="module")
+def sample_sampler(tmp_path_factory):
+    d = tmp_path_factory.mktemp("profile")
+    write_outputs(
+        *profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), d, plots=False
+    )
+    nodes = pd.DataFrame(
+        {"node": range(40), "x": [i % 7 for i in range(40)], "y": [i // 7 for i in range(40)]}
+    )
+    return OrderSampler(Empirical(d), nodes, "clustered", zone_seed=1, depot_nodes=(0,), n_zones=4)
 
 
-def test_road_class_and_zone_need_the_map():
-    rows = drive("L", T, 0, 1) + drive("L", T + 20, 1, 2, key=0)  # residential, into zone
-    assert counts(rows, G=graph())["KR-3"] == 1
-    assert counts(rows, G=graph())["KR-6"] == 1
-    assert counts(rows)["KR-3"] == 0 and "no map" in audit_log(rows, CFG).skipped[0]
-    ok_rows = drive("L", T, 0, 1) + drive("L", T + 4000, 1, 2, key=1)  # primary, after hours
-    assert counts(ok_rows, G=graph()) == counts([], G=graph())
+def test_generator_runs_on_sample(sample_sampler):
+    orders = sample_sampler.generate(60, seed=0)
+    s = order_summary(orders)
+    assert s["orders"] == 60 and s["with_time_window"] + s["without_time_window"] == 60
+    assert s["with_time_window"] == sum(tw_of(o) is not None for o in orders)
+    assert s["dynamic"] > 0  # D3: some release_time > start
+    for o in orders:
+        assert o.node != 0 and o.demand >= 1
+        assert SIM_START_S <= o.release_time <= SIM_END_S
+        tw = tw_of(o)
+        assert tw is None or (o.release_time <= tw[0] < tw[1] <= SIM_END_S)
+        assert tw is not None or (o.tw_start, o.tw_end) == (NO_TW_START, NO_TW_END)
 
 
-def test_dynamic_orders_only_get_the_duplicate_check():
-    rows = deliver("V", T, "dyn_1", 7, demand=1.0) + deliver("V", T + 5, "dyn_1", 7, demand=1.0)
-    c = counts(rows)
-    assert c["KR-12"] == 1 and c["NODE"] == 0 and c["KR-8"] == 0
+def test_generate_order_single(sample_sampler):
+    t = SIM_START_S + 3600
+    a = sample_sampler.generate_order(random.Random(5), t)
+    b = sample_sampler.generate_order(random.Random(5), t, order_id=a.id)
+    assert a == b and a.release_time == t and a.id.startswith("dyn_")
+    tw = tw_of(a)
+    assert tw is None or tw[0] >= t
 
 
-def test_delivered_and_failed_is_a_violation():
-    rows = CLEAN + [row(T + 900, "V", "order_failed", order_id="a", node=1, reason="x")]
-    assert counts(rows)["KR-12"] == 1
+def test_generator_uses_local_rng(sample_sampler):
+    random.seed(1)
+    before = random.random()
+    random.seed(1)
+    sample_sampler.generate(20, seed=3)
+    assert random.random() == before  # global random state untouched
+    assert sample_sampler.generate(20, seed=3) == sample_sampler.generate(20, seed=3)
 
 
-def test_real_r1_run_with_disruptions_audits_clean(tmp_path):
-    """R1's simulator on the small Secunderabad map, 30 closures/spikes per hour."""
-    from src.sim.run import run_from_config
+def test_orders_load_in_r1_after_json_round_trip(sample_sampler):
+    """30 orders -> asdict -> JSON -> R1's build_order: nothing None, R1's window checks run."""
+    orders = sample_sampler.generate(30, seed=0)
+    assert any(tw_of(o) is None for o in orders) and any(tw_of(o) for o in orders)
+    loaded = [build_order(d) for d in json.loads(json.dumps([asdict(o) for o in orders]))]
+    assert loaded == orders
+    for o in loaded:
+        assert all(v is not None for v in asdict(o).values()), o.id
+        # the exact comparisons src/sim/environment.py makes (they raised TypeError on None)
+        assert isinstance(max(o.tw_start, o.release_time) > o.tw_end, bool)
+        assert isinstance(SIM_START_S > o.tw_end, bool)
+
+
+def test_export_nodes_matches_the_simulators_graph(tmp_path):
     from src.world.graph_loader import load_road_graph
 
+    out = tmp_path / "nodes.csv"
+    res = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "export_nodes.py"), "--graph",
+         "secunderabad_small", "--out", str(out)],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    nodes = pd.read_csv(out)
     G = load_road_graph("secunderabad_small")
-    nodes = sorted(G.nodes)
-    depot, stops = nodes[0], nodes[10:130:12]
-    route = [depot]
-    for a, b in zip([depot] + stops, stops + [depot]):
-        route += nx.shortest_path(G, a, b, weight="free_flow_time")[1:]
-    orders = [
-        {
-            "id": f"o{i}",
-            "node": n,
-            "demand": 1.0,
-            "service_time": 30.0,
-            "release_time": T,
-            "tw_start": T,
-            "tw_end": T + 3 * 3600,
-        }
-        for i, n in enumerate(stops)
-    ]
-    cfg = {
-        "run_id": "audit_real",
-        "scenario": "audit_real",
-        "seed": 1,
-        "mode": "independent",
-        "map_path": "data/processed/secunderabad_small.graphml",
-        "start_time_s": T,
-        "duration_seconds": 4 * 3600.0,
-        "disruption_rate_per_hour": 30.0,
-        "headless": True,
-        "log_path": str(tmp_path / "run.jsonl"),
-        "vehicles": [
-            {
-                "id": "V1",
-                "depot_node": depot,
-                "current_node": depot,
-                "capacity": 50.0,
-                "route": route,
-            }
-        ],
-        "orders": orders,
-    }
-    rows = read_log(run_from_config(cfg))
-    assert any(r["event"] == "disruption" for r in rows)
-    rep = audit_log(rows, cfg, G)
-    assert rep.ok, [v.as_dict() for v in rep.violations[:5]]
-    assert rep.checked["KR-4"] > 50 and rep.checked["KR-12"] >= 1
+    assert list(nodes.columns) == ["node", "x", "y"]
+    assert set(nodes["node"]) == set(G.nodes) and f"wrote {len(nodes)} nodes" in res.stdout
+    assert nodes[["x", "y"]].notna().all().all()
 
 
-def test_cli_exit_codes_config_lookup_and_reports(tmp_path):
-    (tmp_path / "toy_s3.yaml").write_text(yaml.safe_dump(CFG), encoding="utf-8")
-    good, badlog = tmp_path / "good.jsonl", tmp_path / "bad.jsonl"
-    good.write_text("\n".join(json.dumps(r) for r in CLEAN), encoding="utf-8")
-    badlog.write_text(
-        "\n".join(json.dumps(r) for r in CLEAN + deliver("V", T + 400, "b", 2)), encoding="utf-8"
-    )
-    assert find_config(read_log(good), tmp_path) == tmp_path / "toy_s3.yaml"
-    assert main([str(good), "--config-dir", str(tmp_path), "--no-map"]) == 0
-    md, js = tmp_path / "a.md", tmp_path / "a.json"
-    assert (
-        main(
-            [
-                str(good),
-                str(badlog),
-                "--config-dir",
-                str(tmp_path),
-                "--no-map",
-                "--md",
-                str(md),
-                "--json",
-                str(js),
-            ]
-        )
-        == 1
-    )
-    assert "| **all runs** |" in md.read_text(encoding="utf-8")
-    assert [r["ok"] for r in json.loads(js.read_text(encoding="utf-8"))] == [True, False]
-    (tmp_path / "other").mkdir()
-    assert main([str(good), "--config-dir", str(tmp_path / "other")]) == 2
+@needs_real_data
+def test_profile_on_real_data(tmp_path):
+    R, S, P = profile(REAL_ROUTES, REAL_PACKAGES, max_routes=50)
+    assert len(R) == 50 and (R["n_stops"] > 0).all()
 
 
-def test_markdown_table_totals():
-    reps = [audit_log(CLEAN, CFG), audit_log(CLEAN + deliver("V", T + 400, "b", 2), CFG)]
-    last = markdown(reps).splitlines()[-1]
-    assert last.startswith("| **all runs** | 1 |") and last.endswith("| 1 |")
+@needs_real_data
+def test_real_profile_has_time_windows(tmp_path):
+    _, _, P = profile(REAL_ROUTES, REAL_PACKAGES, max_routes=50)
+    assert 0 < P["has_tw"].mean() < 1
+
+
+@needs_real_data
+def test_generator_on_real_profile(tmp_path):
+    write_outputs(*profile(REAL_ROUTES, REAL_PACKAGES, max_routes=50), tmp_path, plots=False)
+    nodes = pd.DataFrame({"node": range(100), "x": range(100), "y": range(100)})
+    orders = OrderSampler(Empirical(tmp_path), nodes).generate(100, seed=0)
+    assert len(orders) == 100
+
+
+def test_fill_data_profile_on_sample(tmp_path):
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    doc = tmp_path / "doc.md"
+    doc.write_bytes((ROOT / "docs" / "data_profile.md").read_bytes())
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    text = doc.read_text(encoding="utf-8")
+    assert "___" not in text and "Routes profiled: 3 of 3 (all)" in text
+    assert "| Package volume (cm³) | 1,100 |" in text
+    assert "| Stops per route | 1 | 2 | 2 | 2 | 3 | 2 |" in text
+    assert "Share of stops with at least one windowed package: 33.3 %" in text
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0   # re-run is safe
+    assert doc.read_bytes().decode("utf-8").replace("\r\n", "\n") == text.replace("\r\n", "\n")
+
+
+def test_fill_data_profile_repairs_a_cp1252_doc(tmp_path):
+    """A doc saved in the Windows code page by the old script is read and rewritten as UTF-8."""
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    doc = tmp_path / "doc.md"
+    # what the old script left on Windows: untouched lines UTF-8, the line it wrote in cp1252
+    lines = ["# Data profile \u2014 Amazon", "- Download size of what we used: 454.4 MB \u00b7 "
+             "Routes profiled: 9 of 9 (all)", "| Package volume (cm\u00b3) | | | | | | |",
+             "- Share of packages with a time window: ___ %",
+             "- Share of stops with at least one windowed package: ___ %",
+             "- Is service time per package or repeated per stop? ___"]
+    encoded = [ln.encode("cp1252") if i == 1 else ln.encode("utf-8") for i, ln in enumerate(lines)]
+    doc.write_bytes(b"\n".join(encoded))
+    with pytest.raises(UnicodeDecodeError):
+        doc.read_bytes().decode("utf-8")
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    text = doc.read_bytes().decode("utf-8")              # valid UTF-8 again
+    assert "| Package volume (cm³) | 1,100 |" in text and "Routes profiled: 3 of 3 (all)" in text
+    assert text.startswith("# Data profile \u2014") and "___" not in text
+
+
+def test_fill_data_profile_windows_line_endings(tmp_path):
+    """A Windows checkout (\r\n endings): line endings are kept and a re-run changes nothing."""
+    import importlib.util
+
+    write_outputs(*profile(SAMPLE / "route_data.json", SAMPLE / "package_data.json"), tmp_path,
+                  plots=False)
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    doc = tmp_path / "doc.md"
+    text = fill.read_doc(ROOT / "docs" / "data_profile.md")
+    doc.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    first = doc.read_bytes()
+    assert b"\r\r" not in first and first.count(b"\r\n") == first.count(b"\n")
+    assert fill.main(["--profile-dir", str(tmp_path), "--doc", str(doc)]) == 0
+    assert doc.read_bytes() == first
+
+
+def test_service_time_column_follows_the_data():
+    from src.data.orders_from_amazon import service_is_per_stop
+
+    same = pd.DataFrame({"route_id": "r", "stop_id": ["a", "a", "b", "b"],
+                         "service_s": [60.0, 60.0, 30.0, 30.0]})
+    varies = same.assign(service_s=[60.0, 20.0, 30.0, 10.0])
+    assert service_is_per_stop(same) and not service_is_per_stop(varies)
+    assert not service_is_per_stop(same.drop(columns="service_s"))
     

@@ -1,6 +1,7 @@
 """
 R3 · Week 5: constraint-violation audit. Scans any simulation log (R1's JSONL, docs/log_schema.md)
-against its scenario config and reports every broken hard rule. Week 7 target: zero on every run.
+against its scenario config and reports violations of the hard rules in the table below.
+Week 7 target: zero violations on these checks in every run.
 
     python -m src.kr.audit logs/run.jsonl --config configs/scenarios/medium_hotspot_s0.yaml
     python -m src.kr.audit logs/*.jsonl --config-dir configs/scenarios --md reports/audit.md
@@ -17,8 +18,18 @@ What is checked (per delivered order / per road entered), with R1's exact semant
     KR-4    no vehicle enters a road while it is closed (start <= t < expiry of a logged closure)
     KR-3    no vehicle enters a road whose class its allowed_road_classes excludes (needs the map)
     KR-6    no large vehicle enters a restricted zone during its hours (kr_zones; needs map)
+    KR-5    every road entered exists in that direction in the map (no wrong-way driving; needs map)
+    KR-9    service starts no earlier than the vehicle's arrival at the order's node
     PATH    each road entered starts at the node the vehicle is at (log integrity)
 Orders created during the run (dyn_*) carry no window in the log, so only KR-12 applies to them.
+
+NOT checked (say so when reporting "zero violations"):
+    KR-10, KR-10a  back at the depot by shift_end: R1's Vehicle has no shift_end and none of the
+                   committed scenario files sets one, so there is nothing to check against
+    KR-2, KR-13, KR-14, KR-15   allocation / ordering decisions (and KR-13 is soft): the log shows
+                   their outcome, not the decision; R3's unit tests cover them
+    KR-16          replan after a closure: covered indirectly, since KR-4 catches any vehicle that
+                   drives onto a closed road instead of replanning
 """
 
 from __future__ import annotations
@@ -35,7 +46,20 @@ from .ontology import NO_TW_END, NO_TW_START
 from .rules import _road_class
 
 EPS = 0.01  # R1's logger rounds t to 2 decimals, so t - service_time can be off by up to 0.005 s
-CHECKS = ("KR-12", "NODE", "KR-11", "KR-7", "KR-8", "KR-1", "KR-4", "KR-3", "KR-6", "PATH")
+CHECKS = (
+    "KR-12",
+    "NODE",
+    "KR-11",
+    "KR-7",
+    "KR-8",
+    "KR-9",
+    "KR-1",
+    "KR-4",
+    "KR-5",
+    "KR-3",
+    "KR-6",
+    "PATH",
+)
 
 
 @dataclass
@@ -94,7 +118,7 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
     vehicles = {v.id: v for v in (build_vehicle(d) for d in cfg.get("vehicles", []))}
     zones = list(zones) if zones is not None else zones_from_config(cfg)
     if G is None:
-        rep.skipped.append("KR-3, KR-6: no map given")
+        rep.skipped.append("KR-3, KR-5, KR-6: no map given")
 
     def bad(rule, row, detail):
         rep.violations.append(
@@ -102,6 +126,7 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
         )
 
     position = {vid: v.current_node for vid, v in vehicles.items()}
+    arrived: dict = {}  # vid -> time of its last edge_exit (arrival at its current node)
     delivered_load = defaultdict(float)
     delivered_by: dict = {}
     failed: set = set()
@@ -135,6 +160,10 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
                         f"{start:.0f}-{expiry:.0f}s",
                     )
             veh = vehicles.get(vid)
+            if G is not None:
+                rep.checked["KR-5"] += 1
+                if not G.has_edge(u, v, key):
+                    bad("KR-5", row, f"road {u}->{v} (key {key}) does not exist in that direction")
             if G is not None and veh is not None and G.has_edge(u, v, key):
                 from .ontology import allowed_classes_of, class_of
 
@@ -150,6 +179,7 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
 
         elif ev == "edge_exit":
             position[vid] = p.get("node")
+            arrived[vid] = t
 
         elif ev == "order_failed":
             failed.add(p.get("order_id"))
@@ -185,6 +215,15 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
                     f"{p.get('node')}, vehicle at {position.get(vid)}",
                 )
             start = t - o.service_time
+            if vid in arrived:
+                rep.checked["KR-9"] += 1
+                if start < arrived[vid] - EPS:
+                    bad(
+                        "KR-9",
+                        row,
+                        f"{oid} service started {start:.0f}s, before the vehicle "
+                        f"arrived at {arrived[vid]:.0f}s",
+                    )
             rep.checked["KR-11"] += 1
             if start < o.release_time - EPS:
                 bad(

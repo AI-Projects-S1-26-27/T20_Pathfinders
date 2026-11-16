@@ -77,6 +77,13 @@ stops per vehicle). `test_same_answer_as_the_exact_check` checks this on 25 rand
 `test_exact_route_finds_a_reordering_insertion_misses` shows a case only the exact step can solve.
 After a vehicle takes the order, `assign(vid, order, result)` stores the checked sequence for the next arrival.
 
+**Keeping it in step with the simulator.** The filter reads `vehicle.load` and `vehicle.current_node` live
+from R1's `Vehicle` objects and keeps only each vehicle's remaining stop order. R1 adds a delivered order's
+demand to `vehicle.load`, so the caller must call `mark_delivered(vid, order_id)` on every `order_delivered`
+event (and `mark_failed` on `order_failed`); otherwise that demand is counted twice and vehicles are wrongly
+rejected for capacity (`test_delivered_orders_are_not_counted_twice`). Call `set_time(env.now)` before each
+`check`. With these, the filter never has to be rebuilt during a run.
+
 Benchmark (`python -m src.kr.fast_path`, Euclidean toy world, 40 arrivals each, same answers in all 200):
 
 | Vehicles | Committed per vehicle | Capacity | Fast ms/order | Exact ms/order | Speed-up | Decided by |
@@ -87,8 +94,10 @@ Benchmark (`python -m src.kr.fast_path`, Euclidean toy world, 40 arrivals each, 
 | 20 | 6 | 30 | 0.170 | 0.470 | 2.8x | 799 insertion, 1 exact |
 | 20 | 8 | 40 | 0.305 | 0.996 | 3.3x | 800 insertion |
 
-Both are well under a millisecond per arrival, so the gain is modest; it grows with the number of stops a
-vehicle carries, because the exact search grows much faster than insertion (n + 1 schedule checks).
+**Status: correct and reusable, not needed for speed.** Both versions take well under a millisecond per
+arrival and are only 1.2x-3.3x apart on this toy benchmark, so the system does not need the fast path for
+performance. Its value is that it gives the same answers as the exact check cheaply and records which rule
+decided each vehicle. It is not wired in yet (TODO below).
 
 TODO(R4/R1): call `NewOrderFilter.check` on each `new_order` event before the auction (Week 2's
 `OrderSampler.generate_order` creates the order).

@@ -71,8 +71,9 @@ assumptions (the Amazon data has no priorities): `PRIORITY_SPLIT`, `DYNAMIC_SHAR
 
 **Coverage (Week 5).** `tests/test_rule_coverage.py` has one passing and one blocking case for every rule
 above except KR-14 and KR-16, which belong to R4 and R7. It fails if a rule is added to the engine or to
-this table without both cases. `src/kr/audit.py` re-checks KR-1, KR-3, KR-4, KR-6, KR-7, KR-8, KR-11 and
-KR-12 on every simulation log (`docs/kr_audit.md`).
+this table without both cases. `src/kr/audit.py` re-checks KR-1, KR-3, KR-4, KR-5, KR-6, KR-7, KR-8, KR-9, KR-11 and
+KR-12 on every simulation log; it does not check KR-10/KR-10a (no `shift_end` in R1's vehicles or the
+scenario files), see `docs/kr_audit.md`.
 
 ## 3. Conflict resolution between rules
 

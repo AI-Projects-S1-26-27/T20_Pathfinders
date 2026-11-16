@@ -156,3 +156,28 @@ def test_with_r1_models():
 def test_benchmark_agrees_with_exact():
     r = benchmark(n_vehicles=6, per_vehicle=3, n_new=10, seed=5)
     assert r["same_answer"] == "10/10" and r["fast_ms_per_order"] > 0
+
+
+def test_delivered_orders_are_not_counted_twice():
+    """R1 adds a delivered order's demand to vehicle.load; the plan must then drop it."""
+    from src.sim.models import Order as SimOrder, Vehicle as SimVehicle
+    v = SimVehicle("V", 0, 5.0, current_node=0)
+    a = SimOrder("a", 2, 3.0, release_time=T)
+    f = NewOrderFilter([v], tt, T, {"V": [a]})
+    v.load += a.demand                       # what R1's environment does on order_delivered
+    v.current_node = 2
+    new = SimOrder("n", 3, 2.0, release_time=T)          # 3 on board + 2 = 5 <= 5
+    assert f.check(new).eligible == []                   # without the sync: counted twice
+    assert f.mark_delivered("V", "a") and f.plan["V"] == []
+    assert f.check(new).eligible == ["V"]
+    assert not f.mark_delivered("V", "a")                # already gone
+
+
+def test_failed_orders_free_their_room():
+    from src.sim.models import Order as SimOrder, Vehicle as SimVehicle
+    v = SimVehicle("V", 0, 4.0, current_node=0)
+    f = NewOrderFilter([v], tt, T, {"V": [SimOrder("a", 2, 3.0, release_time=T)]})
+    new = SimOrder("n", 3, 2.0, release_time=T)
+    assert f.check(new).eligible == []                   # 3 + 2 > 4
+    assert f.mark_failed("V", "a")
+    assert f.check(new).eligible == ["V"]

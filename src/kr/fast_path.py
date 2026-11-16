@@ -20,8 +20,19 @@ above that the fast path can only accept MORE vehicles (insertion finds schedule
 priority-first / EDF fallback misses). tests/test_fast_path.py checks both.
 
     f = NewOrderFilter(vehicles, travel_time, t_now, committed={vid: [orders in stop order]})
+    f.set_time(env.now)           # before each check
     res = f.check(order)          # res.eligible, res.sequence[vid], res.decided_by[vid]
     f.assign(res.eligible[0], order, res)   # keep the plan up to date for the next arrival
+    f.mark_delivered(vid, order_id)         # on R1's order_delivered (and mark_failed on
+                                            # order_failed): R1 adds the demand to vehicle.load,
+                                            # so the plan must drop the order or it counts twice
+
+The filter reads vehicle.load and vehicle.current_node live from R1's Vehicle objects; it only
+keeps each vehicle's remaining stop order, so it never has to be rebuilt during a run.
+
+Status: correct and reusable, but not needed for speed. Both this and csp.eligible_vehicles take
+well under 1 ms per arrival (1.2x-3.3x apart on the benchmark), and it is not wired in yet:
+TODO(R4/R1) call it on new_order events.
 """
 
 from __future__ import annotations
@@ -115,6 +126,24 @@ class NewOrderFilter:
                 res.sequence[vid] = seq
         res.seconds = time.perf_counter() - t0
         return res
+
+    def mark_delivered(self, vid, order_id) -> bool:
+        """The order was delivered: R1 has already added its demand to vehicle.load, so drop it
+        from the plan (otherwise its demand counts twice). Returns False if it was not planned."""
+        return self._drop(vid, order_id, "delivered")
+
+    def mark_failed(self, vid, order_id) -> bool:
+        """The order failed (missed window, horizon...): it no longer needs room or a stop."""
+        return self._drop(vid, order_id, "failed")
+
+    def _drop(self, vid, order_id, why) -> bool:
+        plan = self.plan.get(vid, [])
+        keep = [o for o in plan if o.id != order_id]
+        if len(keep) == len(plan):
+            return False
+        self.plan[vid] = keep
+        self.stats[why] += 1
+        return True
 
     def assign(self, vid, order, res: Optional[FastResult] = None) -> None:
         """Record that vid took the order (uses the checked sequence when given)."""
