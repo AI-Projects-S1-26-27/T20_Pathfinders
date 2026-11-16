@@ -529,8 +529,10 @@ def test_real_scenario_that_crashed_the_simulator(tmp_path):
         pytest.skip("R3's scenario configs not present")
     with open(path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
+    # allocation="route": since #38 the default is contract_net, which never
+    # hits the cut-off stop here, so the test would pass on the old planner too.
     cfg.update(mode="independent", disruption_rate_per_hour=20.0, run_id="crash_regression",
-               log_path=str(tmp_path / "log.jsonl"),
+               log_path=str(tmp_path / "log.jsonl"), allocation="route",
                planner={"min_gain_s": 0.0, "min_gain_frac": 0.0})
     log = run_from_config(cfg)
     with open(log, encoding="utf-8") as f:
@@ -539,3 +541,6 @@ def test_real_scenario_that_crashed_the_simulator(tmp_path):
     unreachable = [r for r in out if r["event"] == "order_failed"
                    and r["payload"]["reason"] == "unreachable"]
     assert len(unreachable) == 0
+    reordered = [r for r in out if r["event"] == "stop_unreachable"
+                 and r["payload"].get("reordered") is True]
+    assert reordered, "the fix was not exercised: no stop_unreachable row with reordered"
