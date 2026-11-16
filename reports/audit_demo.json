@@ -1,0 +1,78 @@
+[
+ {
+  "scenario": "small_clustered_s0",
+  "disruption_rate_per_hour": 10.0,
+  "orders": 100,
+  "vehicles": 10,
+  "delivered": 90,
+  "failed": 10,
+  "disruptions": 22,
+  "road_entries": 2870,
+  "checked": {
+   "PATH": 2870,
+   "KR-4": 2870,
+   "KR-5": 2870,
+   "KR-3": 2870,
+   "KR-12": 90,
+   "KR-1": 90,
+   "NODE": 90,
+   "KR-9": 90,
+   "KR-11": 90,
+   "KR-7": 5,
+   "KR-8": 5
+  },
+  "violations": {
+   "KR-12": 0,
+   "NODE": 0,
+   "KR-11": 0,
+   "KR-7": 0,
+   "KR-8": 0,
+   "KR-9": 0,
+   "KR-1": 0,
+   "KR-4": 0,
+   "KR-5": 0,
+   "KR-3": 0,
+   "KR-6": 0,
+   "PATH": 0
+  },
+  "total_violations": 0
+ },
+ {
+  "scenario": "medium_hotspot_s3",
+  "disruption_rate_per_hour": 10.0,
+  "orders": 200,
+  "vehicles": 15,
+  "delivered": 150,
+  "failed": 50,
+  "disruptions": 23,
+  "road_entries": 4113,
+  "checked": {
+   "PATH": 4113,
+   "KR-4": 4113,
+   "KR-5": 4113,
+   "KR-3": 4113,
+   "KR-12": 150,
+   "KR-1": 150,
+   "NODE": 150,
+   "KR-9": 150,
+   "KR-11": 150,
+   "KR-7": 14,
+   "KR-8": 14
+  },
+  "violations": {
+   "KR-12": 0,
+   "NODE": 0,
+   "KR-11": 0,
+   "KR-7": 0,
+   "KR-8": 0,
+   "KR-9": 0,
+   "KR-1": 0,
+   "KR-4": 0,
+   "KR-5": 0,
+   "KR-3": 0,
+   "KR-6": 0,
+   "PATH": 0
+  },
+  "total_violations": 0
+ }
+]

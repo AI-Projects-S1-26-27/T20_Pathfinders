@@ -1,4 +1,4 @@
-"""Comprehensive Unit Tests for R5 Coordination Module."""
+"""Comprehensive Unit Tests for Coordination Module."""
 
 import random
 import pytest
@@ -379,6 +379,19 @@ def test_message_counter_d7_and_allocations():
     assert counter.total_negotiation_messages == 6
     assert counter.total_messages == 7
 
+def test_credits_never_go_negative():
+    """It will verify vehicle with 1 credit winning price 6 drops to 0, not negative."""
+    routes = [
+        VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=2.0, detour_extra_time=5.0),
+        VehicleRoute("V2", ["A", "B"], start_time=1.0, travel_times={("A", "B"): 10.0}, priority_weight=1.0, detour_extra_time=3.0),
+    ]
+    # V1 has only 10.0 credits; V2 bids 3.0. V1 pays 3.0 -> remaining 7.0
+    budgets = {"V1": VirtualCreditBudget("V1", 10.0), "V2": VirtualCreditBudget("V2", 50.0)}
+
+    winner, losers, price = run_vickrey_auction(routes, budgets)
+    assert winner == "V1"
+    assert budgets["V1"].credits == 7.0
+    assert budgets["V1"].credits >= 0.0
 
 def test_input_list_order_independence():
     """Verifies auction results do not depend on the order of input contesting_routes list."""
@@ -408,6 +421,10 @@ def test_credits_never_go_negative():
 def test_message_counter_d7():
     test_message_counter_d7_and_allocations()
 
+def test_input_list_order_independence():
+    """It will verify auction results do not depend on the order of input contesting_routes list."""
+    r1 = VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=2.0)
+    r2 = VehicleRoute("V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}, priority_weight=1.0)
 
 def test_threshold_trigger_negative_ttc():
     test_table_driven_threshold_trigger()
@@ -415,3 +432,5 @@ def test_threshold_trigger_negative_ttc():
 
 def test_vickrey_truthfulness_property():
     test_truthfulness_sanity_check_under_budgets()
+    assert res1[0] == res2[0]  # Same winner
+    assert res1[2] == res2[2]  # Same price

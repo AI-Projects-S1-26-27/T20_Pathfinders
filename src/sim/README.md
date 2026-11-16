@@ -11,6 +11,54 @@ python -m src.sim.run --config configs/sim_default.yaml
 Writes `logs/<run_id>.jsonl` (schema: `docs/log_schema.md`). Without R6's data/torch you
 will see `Traffic model unavailable, using free-flow times` - this is expected.
 
+## Modes (W4)
+
+The config's `mode` picks the condition; `run.py` builds the matching simulation
+(`build_simulation(config, world=None)` returns `(env, planner)`). **The default mode is now
+`independent`**: a config without `mode` runs with R7's replanning agents, not fixed routes.
+
+| mode | simulation | who decides routes |
+|------|------------|--------------------|
+| `centralized` | R4's `AllocationSimulation` (`src/allocation/sim_runner.py`) | R4 re-solves the whole fleet (OR-Tools) on every event and order arrival. Hand-written `route`s are ignored. |
+| `independent` | `DeliverySimEnvironment` + R7's `AgentPlanner` | each vehicle replans locally with D* Lite on every disruption; never negotiates. |
+| `full` | as `independent` + R5's `TriggerCoordination` | after every replan, R5's trigger (`ThresholdTrigger(tau)`) and Vickrey auction. |
+
+Optional config blocks (unknown keys raise, like `disruptions:`):
+
+```yaml
+planner:          # independent / full (R7)
+  unreachable: fail       # or wait
+  min_gain_s: 10.0        # hysteresis
+  min_gain_frac: 0.05
+coordination:     # full (R5)
+  tau: 600.0              # D6: negotiate iff time-to-conflict < tau (s)
+  rate_limit_s: 60.0
+  initial_credits: 100.0
+```
+
+In independent/full the initial assignment is still `assign_orders` (first vehicle whose
+route visits the order); R7's planner then routes each vehicle through its stops.
+R7's `replan_summary` is logged just before `sim_complete` (`env.add_finisher`).
+
+**Check-in demo**: one scenario, same seed, every mode, table from the logs:
+
+```bash
+python -m src.sim.demo_modes --rate 300             # configs/viz_demo.yaml, 3 modes
+python -m src.sim.demo_modes --modes independent full --rate 600   # force replans
+python -m src.sim.demo_modes --csv reports/checkin_modes.csv
+```
+
+Logs go to `logs/<run_id>_<mode>.jsonl` (R2's replay/multipane viewers read them).
+At viz_demo's own rate (10/h) no disruption hits a planned road, so the demo uses `--rate 300`.
+Measured here: independent and full take ~4 s each at `--rate 300`; **centralized is slow at
+this rate** (R4 re-solves on every disruption: 44.8 of 240 simulated minutes after ~10 min), so for
+a quick live demo add `--modes independent full`.
+The demo warns (stderr) if delivered + failed is less than the number of orders released.
+
+Every order ends `order_delivered` or `order_failed` with a reason: `not_on_route` /
+`capacity_exceeded_unservable` at the end of a vehicle's route, `horizon_exceeded` if still pending
+when the run ends, `no_vehicle` (logged right after `sim_start`) if the config has no vehicles.
+
 ## Files
 
 | file | what it does |
@@ -21,7 +69,8 @@ will see `Traffic model unavailable, using free-flow times` - this is expected.
 | `models.py` | `Order`, `Vehicle`, `Event` dataclasses. |
 | `logger.py` | `SimulationLogger`: 9-key JSONL lines. |
 | `interfaces.py` | Abstract `Planner`, `Predictor`, `Trigger`, `Negotiator`, `MetricsLogger`, and `Route`. |
-| `run.py` | Builds world/vehicles/orders from a YAML config and runs it. |
+| `run.py` | Builds world/vehicles/orders from a YAML config and runs it in the config's mode. |
+| `demo_modes.py` | W4 check-in demo: same scenario in centralized / independent / full, summary table. |
 | `scenarios.py` | `make_demo_config(world)` random demo config. |
 
 ## Clock
@@ -33,7 +82,7 @@ Order time windows, release times, closure/spike start and expiry all use this c
 ## Travel time
 
 ```
-edge_time(u, v, key, t) = inf                                   if the road is closed at t
+edge_time(u, v, t, key=None) = inf                              if the road is closed at t
                         = free_flow x traffic_mult x spike_mult  otherwise
 ```
 
@@ -66,21 +115,55 @@ edge_time(u, v, key, t) = inf                                   if the road is c
 ## Disruptions (D11)
 
 Poisson arrivals at `disruption_rate_per_hour` (mean gap 3600 / rate s). Each event is
-a traffic spike (40%, x1.2-3.0), a closure (30%) or a new order (30%). Spikes and
-closures hit a random road for 600-1800 s starting at the event time. Events are
-logged and passed to every `env.subscribe(callback)` listener.
+a traffic spike (40%), a closure (30%) or a new order (30%). Spikes and closures hit a
+random road starting at the event time. Events are logged and passed to every
+`env.subscribe(callback)` listener.
+
+Durations and spike sizes come from the optional `disruptions:` config block
+(defaults shown; unknown keys or bad values raise `ValueError` when the
+environment is built):
+
+```yaml
+disruptions:
+  min_duration_s: 600.0      # spike/closure length, uniform in [min, max]
+  max_duration_s: 1800.0
+  min_spike: 1.2             # spike multiplier, uniform in [min, max]; must be >= 1.0
+  max_spike: 3.0
+  max_closure_attempts: 20   # closure guard redraws, see below
+```
+
+**Closure guard** (D11 "closures never disconnect pending destinations"): before a
+closure is placed, `EventGenerator.closure_disconnects` checks it against
+`env.pending_targets()`, which gives each vehicle's position (the end of the road it is on
+while driving) and its undelivered order nodes. A closure that would cut a vehicle off
+from a destination it can reach right now is redrawn on another random road; after
+`max_closure_attempts` draws it is skipped and logged as `closure_skipped`. Destinations
+already unreachable (one-way streets, earlier closures) never block a closure. Fast
+path: if `v` is still reachable from `u` without the road, nobody can be cut off.
+Spikes are never blocked. Subclasses that drive vehicles their own way (R4's
+`AllocationSimulation`) should override `pending_targets()`; until then it returns
+nothing for them and the guard allows every closure.
+
+## Profiling
+
+```bash
+python -m src.sim.run --config configs/sim_default.yaml --profile      # top 20
+python -m src.sim.run --config configs/sim_default.yaml --profile 40   # top 40
+```
+
+Prints a `cProfile` table sorted by cumulative time.
 
 ## Hand-offs
 
 - **R3 (orders)**: `env.add_order(order)`; `new_order` events only announce `dyn_N`
   for now (`TODO(R3)` in `events.py`). `Vehicle.current_load` is available for rules.
-- **R4/R5 (planning, negotiation)**: replace `assign_orders` in `run.py`
-  (`TODO(R4/R5)`); `Route(nodes, expected_times, order_ids)`; depot unloading.
+- **R4/R5 (planning, negotiation)**: wired in by the mode switch (above). Still open:
+  R4's contract-net for the initial assignment in independent/full (`TODO(R4)` in
+  `run.py`); depot unloading; `AllocationSimulation` logs `allocation_summary` after
+  `sim_complete` (could use `env.add_finisher`).
 - **R6 (traffic)**: `World.from_defaults` loads `TrafficModel` + `Predictor` when
   available; `TODO(R6)` in `world.py` to confirm the clock convention.
 - **R7 (triggers / re-routing)**: subscribe to `disruption` events; vehicles currently
   wait at closures (`TODO(R7)`); use `world.cost_fn_at(t)` to re-plan.
-- **R8 (metrics)**: read the JSONL log, schema in `docs/log_schema.md`.
-
-Not done yet: closure-connectivity guard (D11 "closures never disconnect pending
-destinations") is Week 3.
+- **R8 (metrics)**: read the JSONL log, schema in `docs/log_schema.md`
+  (new env event `closure_skipped`).

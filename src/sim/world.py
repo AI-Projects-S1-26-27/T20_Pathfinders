@@ -5,7 +5,7 @@ All times are absolute seconds from midnight (t = start_time_s + env.now).
 import logging
 import math
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 import networkx as nx
 
@@ -92,18 +92,48 @@ class World:
             (start_t_seconds, expiry_t_seconds, multiplier)
         )
 
-    def is_blocked(self, u, v, key: int = 0, t_seconds: float = 0.0) -> bool:
+    def is_blocked(self, u, v, t: float, key: Optional[int] = None) -> bool:
+        """True while the road is closed at time t (key None = fastest road u -> v)."""
+        if key is None:
+            key = self.edge_key(u, v)
         self._check_edge(u, v, key)
         return any(
-            start <= t_seconds < expiry
+            start <= t < expiry
             for start, expiry in self.closures.get((u, v, key), [])
         )
 
-    def spike_multiplier(self, u, v, key: int = 0, t_seconds: float = 0.0) -> float:
+    def active_closures(self, t: float) -> Set[EdgeId]:
+        """Roads (u, v, key) closed at time t."""
+        return {
+            edge for edge, windows in self.closures.items()
+            if any(start <= t < expiry for start, expiry in windows)
+        }
+
+    def reachable_from(self, source, closed: Iterable[EdgeId] = ()) -> Set:
+        """Nodes reachable from source (itself included) with the given roads removed.
+
+        A parallel road u -> v with another key keeps u -> v connected.
+        """
+        if source not in self.G:
+            return set()
+        view = nx.restricted_view(self.G, [], list(closed))
+        return nx.descendants(view, source) | {source}
+
+    def has_path(self, source, target, closed: Iterable[EdgeId] = ()) -> bool:
+        """True if target is reachable from source with the given roads removed."""
+        if source not in self.G or target not in self.G:
+            return False
+        view = nx.restricted_view(self.G, [], list(closed))
+        return nx.has_path(view, source, target)
+
+    def spike_multiplier(self, u, v, t: float, key: Optional[int] = None) -> float:
+        """Product of the spikes active at time t (1.0 if none)."""
+        if key is None:
+            key = self.edge_key(u, v)
         self._check_edge(u, v, key)
         mult = 1.0
         for start, expiry, m in self.spikes.get((u, v, key), []):
-            if start <= t_seconds < expiry:
+            if start <= t < expiry:
                 mult *= m
         return mult
 
@@ -123,14 +153,19 @@ class World:
         except KeyError:
             return 1.0
 
-    def edge_time(self, u, v, key: int = 0, t_seconds: float = 0.0) -> float:
-        """Actual travel time: free-flow x traffic x spikes, or inf if closed."""
-        if self.is_blocked(u, v, key, t_seconds):
+    def edge_time(self, u, v, t: float, key: Optional[int] = None) -> float:
+        """Actual travel time at time t: free-flow x traffic x spikes, or inf if closed.
+
+        key None = the fastest road u -> v (self.edge_key), as in the frozen interface.
+        """
+        if key is None:
+            key = self.edge_key(u, v)
+        if self.is_blocked(u, v, t, key):
             return math.inf
         return (
             self.free_flow_time(u, v, key)
-            * self.traffic_multiplier(u, v, t_seconds)
-            * self.spike_multiplier(u, v, key, t_seconds)
+            * self.traffic_multiplier(u, v, t)
+            * self.spike_multiplier(u, v, t, key)
         )
 
     def predicted_time(self, u, v, t_seconds: float, horizon_min: int = 15) -> float:
@@ -148,7 +183,7 @@ class World:
     def cost_fn_at(self, t_seconds: float) -> Callable:
         """Edge cost for R2's astar/dijkstra(cost_fn=...) frozen at time t."""
         def cost(u, v, data=None) -> float:
-            return self.edge_time(u, v, self.edge_key(u, v), t_seconds)
+            return self.edge_time(u, v, t_seconds)   # key None = fastest road
         return cost
 
     # ------------------------------------------------------------------
