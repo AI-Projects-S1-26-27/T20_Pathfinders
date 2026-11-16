@@ -16,6 +16,7 @@ pieces and their tests; each owner wires them into their module:
 | **R4** | `WorldTravel` / `ContractNet` / `CentralVRP` (feasibility hook) | `WorldTravel(rules.view(world, vehicle), now)` for paths; `feasibility=r4_feasibility_hook(travel)` (`src/kr/adapters.py`) for bids | not wired yet |
 | **R1** | `src/sim/run.py` (simulator setup) | build `RoadRules(world.graph(), zones_from_config(cfg))` once per run and hand it to the planners; call `log_kr_trace` where plans are made; add `kr_check` to `docs/log_schema.md` | not wired yet |
 | R2 | `astar` / `dijkstra` / `TravelTimeMatrix` callers | `cost_fn=rules.cost_fn(vehicle, base, t)` (no change to R2's code, the callers pass it) | available |
+| **R4 or R1 (to decide)** | `new_order` events, before the auction (`src/kr/fast_path.py`) | `NewOrderFilter.check(order)` for the vehicles allowed to bid; `mark_delivered(vid, order_id)` on every `order_delivered` and `mark_failed` on every `order_failed`, so delivered demand is not counted twice; `set_time(env.now)` before each check | not called by any module outside `src/kr` yet; R4 and R1 must agree who calls it |
 
 Until R7, R4 and R1 wire these in, the rules apply in R3's tests and the audit (`docs/kr_audit.md`)
 checks every log after the fact, but planners do not yet avoid forbidden roads during a run.
