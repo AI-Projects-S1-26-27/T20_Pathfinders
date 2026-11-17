@@ -230,4 +230,26 @@ def test_service_time_column_follows_the_data():
     varies = same.assign(service_s=[60.0, 20.0, 30.0, 10.0])
     assert service_is_per_stop(same) and not service_is_per_stop(varies)
     assert not service_is_per_stop(same.drop(columns="service_s"))
-    
+
+
+def test_service_row_is_the_column_the_generator_uses():
+    """When Amazon repeats one service time on every package of a stop, the doc's row must show
+    the per-stop value (max), not the sum, which counts the stop's time once per package."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fill", ROOT / "scripts" / "fill_data_profile.py")
+    fill = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fill)
+    q = {"0.05": 1, "0.25": 2, "0.5": 3, "0.75": 4, "0.95": 5, "mean": 3}
+    summary = {"n_routes": 1, "share_packages_with_tw": 0.1, "share_stops_with_any_tw": 0.1,
+               "service_time_per_stop_s(max)": q,
+               "service_time_per_stop_s(sum)": {k: 10 * v for k, v in q.items()}}
+    doc = "| Service time per stop (s) | | | | | | |"
+    row = "| Service time per stop (s) |"
+    assert fill.fill(doc, summary, "x", per_stop=True) == row + " 1 | 2 | 3 | 4 | 5 | 3 |"
+    assert fill.fill(doc, summary, "x", per_stop=False).startswith(row + " 10 |")
+    # the sum keeps its own, clearly named row next to it
+    both = doc + "\n| Service time, sum over a stop's packages (s) | | | | | | |"
+    out = fill.fill(both, summary, "x", per_stop=True).splitlines()
+    assert out == [row + " 1 | 2 | 3 | 4 | 5 | 3 |",
+                   "| Service time, sum over a stop's packages (s) | 10 | 20 | 30 | 40 | 50 | 30 |"]

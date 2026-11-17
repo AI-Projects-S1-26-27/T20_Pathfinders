@@ -22,6 +22,9 @@ What is checked (per delivered order / per road entered), with R1's exact semant
     KR-9    service starts no earlier than the vehicle's arrival at the order's node
     PATH    each road entered starts at the node the vehicle is at (log integrity)
 Orders created during the run (dyn_*) carry no window in the log, so only KR-12 applies to them.
+An order_delivered row without the "node" or "demand" field that docs/log_schema.md requires is
+counted under schema_gaps, not as a violation: NODE then uses the vehicle's position alone and KR-1
+the demand in the scenario file.
 
 NOT checked (say so when reporting "zero violations"):
     KR-10, KR-10a  back at the depot by shift_end: R1's Vehicle has no shift_end and none of the
@@ -79,6 +82,8 @@ class AuditReport:
     checked: Counter = field(default_factory=Counter)  # how many times each rule was checked
     violations: list = field(default_factory=list)
     skipped: list = field(default_factory=list)  # rules that could not be checked, and why
+    # rows missing a field docs/log_schema.md requires: a log problem, not a rule violation
+    schema_gaps: Counter = field(default_factory=Counter)
 
     @property
     def ok(self) -> bool:
@@ -96,6 +101,7 @@ class AuditReport:
             "violations_by_rule": self.counts(),
             "violations": [v.as_dict() for v in self.violations],
             "skipped": self.skipped,
+            "schema_gaps": dict(sorted(self.schema_gaps.items())),
         }
 
 
@@ -191,6 +197,9 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
                 bad("KR-12", row, f"{oid} delivered again (first by {delivered_by[oid]})")
                 continue
             delivered_by[oid] = vid
+            for key in ("node", "demand"):
+                if key not in p:
+                    rep.schema_gaps[f"order_delivered without {key}"] += 1
             o = orders.get(oid)
             demand = float(p.get("demand", o.demand if o else 0.0))
             if vid in vehicles:
@@ -207,7 +216,10 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
             if o is None:
                 continue  # dyn_* order: nothing more is known about it
             rep.checked["NODE"] += 1
-            if p.get("node") != o.node or (vid in position and position[vid] != o.node):
+            # without a node field (a schema gap), the vehicle's position alone decides
+            if ("node" in p and p["node"] != o.node) or (
+                vid in position and position[vid] != o.node
+            ):
                 bad(
                     "NODE",
                     row,
@@ -254,13 +266,20 @@ def audit_log(rows: list[dict], cfg: dict, G=None, zones: Optional[Iterable] = N
 
 # ---------------------------------------------------------------- finding the config and the map
 def find_config(rows: list[dict], config_dir: Path) -> Optional[Path]:
-    """<scenario>_s<seed>.yaml, else any YAML whose run_id equals the log's run_id."""
+    """<scenario>_s<seed>.yaml; else the name before '__' in the run_id (R1's sweep launcher names
+    runs large_uniform_s0__full__r10__s9001, and the log's seed is then the run seed, not the
+    scenario's); else any YAML whose run_id equals the log's run_id."""
     if not rows:
         return None
     first = rows[0]
     cand = config_dir / f"{first.get('scenario')}_s{first.get('seed')}.yaml"
     if cand.exists():
         return cand
+    run_id = str(first.get("run_id", ""))
+    if "__" in run_id:
+        cand = config_dir / f"{run_id.split('__', 1)[0]}.yaml"
+        if cand.exists():
+            return cand
     import yaml
 
     for p in sorted(config_dir.glob("*.yaml")):

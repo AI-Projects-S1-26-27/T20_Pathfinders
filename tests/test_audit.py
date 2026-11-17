@@ -305,3 +305,19 @@ def test_audit_demo_is_reproducible(tmp_path):
     assert outs[0] == outs[1]
     r = outs[0][0]
     assert r["total_violations"] == 0 and r["checked"]["KR-4"] > 1000 and r["delivered"] > 0
+
+
+def test_delivery_row_without_node_is_a_schema_gap_not_a_violation():
+    """R4's centralized runner logs order_delivered with only order_id (Week 7 pilot)."""
+    rows = [dict(r, payload=dict(r["payload"])) for r in CLEAN]
+    for r in rows:
+        if r["event"] == "order_delivered":
+            r["payload"] = {"order_id": r["payload"]["order_id"]}
+    rep = audit_log(rows, CFG)
+    assert rep.ok and rep.checked["NODE"] == 2
+    assert rep.schema_gaps == {"order_delivered without node": 2,
+                               "order_delivered without demand": 2}
+    # the vehicle's position still decides: drop the drive to node 2, then b is delivered at node 1
+    moved = [r for r in rows if not (r["event"] == "edge_enter" and r["payload"]["edge"][0] == 1)
+             and not (r["event"] == "edge_exit" and r["payload"]["node"] == 2)]
+    assert counts(moved)["NODE"] == 1
