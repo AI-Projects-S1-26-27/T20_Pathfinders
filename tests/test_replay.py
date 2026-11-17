@@ -206,6 +206,74 @@ def test_clock_and_time_parsing():
     assert replay.parse_time("27000") == 27000
 
 
+# --------------------------------------------------------------------------- messages (HUD)
+
+def negotiation_events():
+    """events() plus one contract-net auction (3 allocation rows) and one R5 auction
+    between 2 vehicles: 2 requests + 2 responses (count 1 each) + a result with count 2,
+    so D7 gives 3 x 2 = 6 negotiation messages."""
+    edge = [4, 1, 0]
+    return sorted(events() + [
+        ev(START + 300, "allocation", {"phase": "announcement", "recipient": "V1",
+                                       "order_id": "O3", "sender": "manager"}, "manager"),
+        ev(START + 300, "allocation", {"phase": "bid", "recipient": "manager",
+                                       "order_id": "O3", "sender": "V1", "cost": 12.0}, "V1"),
+        ev(START + 300, "allocation", {"phase": "award", "recipient": "V1",
+                                       "order_id": "O3", "sender": "manager"}, "manager"),
+        ev(START + 500, "negotiation_request", {"count": 1, "edge": edge}, "V1"),
+        ev(START + 500, "negotiation_request", {"count": 1, "edge": edge}, "V2"),
+        ev(START + 500, "negotiation_response", {"count": 1, "edge": edge}, "V1"),
+        ev(START + 500, "negotiation_response", {"count": 1, "edge": edge}, "V2"),
+        ev(START + 500, "negotiation_result", {"count": 2, "edge": edge,
+                                               "vehicles": ["V1", "V2"], "winner": "V1",
+                                               "price": 3.0, "ttc": 120.0,
+                                               "actions": {"V2": "detour"}}),
+    ], key=lambda e: e["t"])
+
+
+def test_messages_running_total_with_negotiation_rows():
+    evs = negotiation_events()
+    mid = state_at(evs, START + 400, CONFIG)
+    assert mid.messages == {"negotiation": 0, "allocation": 3, "total": 3}
+    end = state_at(evs, START + 800, CONFIG)
+    assert end.messages == {"negotiation": 6, "allocation": 3, "total": 9}
+    hud = replay.hud_text(end)
+    assert "messages: 9 so far (negotiation 6, allocation 3)" in hud
+    assert "n/a" not in hud
+
+
+def test_messages_before_first_message_row_are_zero_not_na():
+    s = state_at(negotiation_events(), START + 100, CONFIG)
+    assert s.messages == {"negotiation": 0, "allocation": 0, "total": 0}
+    assert "messages: 0 so far (negotiation 0, allocation 0)" in replay.hud_text(s)
+
+
+def test_messages_not_logged_when_log_has_no_message_rows():
+    s = state_at(events(), START + 800, CONFIG)
+    assert s.messages is None
+    hud = replay.hud_text(s)
+    assert "messages: not logged" in hud
+    assert "messages: 0" not in hud
+
+
+def test_messages_centralized_rows_count_one_each():
+    # R4's centralized re-solve: one state report and one plan broadcast per vehicle.
+    evs = events() + [
+        ev(START + 200, "central_state_report", {"sender": "V1"}, "V1"),
+        ev(START + 200, "central_state_report", {"sender": "V2"}, "V2"),
+        ev(START + 200, "central_plan_broadcast", {"recipient": "V1", "order_ids": ["O1"]},
+           "V1"),
+        ev(START + 200, "central_plan_broadcast", {"recipient": "V2", "order_ids": []}, "V2"),
+        ev(START + 200, "allocation_complete", {"cpu_seconds": 0.1, "messages": 4,
+                                                "mode": "centralized"}),
+    ]
+    evs.sort(key=lambda e: e["t"])
+    assert state_at(evs, START + 199, CONFIG).messages == {"central": 0, "total": 0}
+    s = state_at(evs, START + 200, CONFIG)
+    assert s.messages == {"central": 4, "total": 4}      # allocation_complete not re-counted
+    assert "messages: 4 so far (central 4)" in replay.hud_text(s)
+
+
 # --------------------------------------------------------------------------- rendering
 
 def test_render_three_frames_to_gif(tmp_path):

@@ -1,4 +1,4 @@
-"""Negotiation & Game Theory Module: Implements Vickrey Second-Price Auctions."""
+"""Negotiation and game theory module for Vickrey second-price auctions."""
 
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -9,7 +9,7 @@ from src.coordination.messages import MessageCounter
 
 @dataclass
 class VirtualCreditBudget:
-    """Budget tracker to prevent single vehicle dominance. Credits never drop below 0."""
+    """Prevent single-vehicle dominance; credits never drop below zero."""
     vehicle_id: str
     credits: float = 100.0
 
@@ -34,7 +34,8 @@ def run_vickrey_auction(
 ) -> Tuple[Optional[str], List[str], float]:
     """
     Vickrey Auction Primitive:
-    - Bids: delay cost. Vehicle cannot win if its credit balance is below the price.
+    - Bids are delay costs. A vehicle cannot win if its credits are below
+      the price.
     - Tie-breaking: lowest vehicle_id.
     - Message counts (D7): 1 result message sent per involved vehicle.
     """
@@ -43,6 +44,8 @@ def run_vickrey_auction(
 
     m_agents = len(contesting_routes)
     if msg_counter:
+        # D7: m results for m agents (1 request, 1 response, 1 result per
+        # participant).
         for _ in range(m_agents):
             msg_counter.log_message("negotiation_request")
             msg_counter.log_message("negotiation_response")
@@ -50,7 +53,11 @@ def run_vickrey_auction(
 
     bids: Dict[str, float] = {}
     for r in contesting_routes:
-        avail_credits = budgets[r.vehicle_id].credits if r.vehicle_id in budgets else 0.0
+        avail_credits = (
+            budgets[r.vehicle_id].credits
+            if r.vehicle_id in budgets
+            else 0.0
+        )
         if avail_credits > 0:
             bids[r.vehicle_id] = calculate_delay_cost(r)
         else:
@@ -79,6 +86,11 @@ def run_vickrey_auction(
         losers = [r.vehicle_id for r in contesting_routes]
         return None, losers, 0.0
 
-    winner_budget.credits = max(0.0, winner_budget.credits - second_highest_bid)
-    losers = [r.vehicle_id for r in contesting_routes if r.vehicle_id != winner.vehicle_id]
+    winner_budget.credits = max(
+        0.0, winner_budget.credits - second_highest_bid
+    )
+    losers = [
+        r.vehicle_id for r in contesting_routes
+        if r.vehicle_id != winner.vehicle_id
+    ]
     return winner.vehicle_id, losers, second_highest_bid

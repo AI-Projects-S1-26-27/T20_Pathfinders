@@ -12,7 +12,10 @@ from src.coordination.conflict import (
     verify_conflicts_brute_force,
 )
 from src.coordination.messages import MessageCounter
-from src.coordination.negotiation import VirtualCreditBudget, run_vickrey_auction
+from src.coordination.negotiation import (
+    VirtualCreditBudget,
+    run_vickrey_auction,
+)
 from src.coordination.trigger import (
     AlwaysTrigger,
     NeverTrigger,
@@ -22,10 +25,16 @@ from src.coordination.trigger import (
 
 
 def test_delta_t_arrival_gap_rule():
-    """D6 arrival-gap test: arrivals 30s apart on 1-slot road clash iff arrival gap < delta_t."""
+    """Check that arrivals clash iff their gap is less than delta_t."""
     routes = [
-        VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 5.0}),
-        VehicleRoute("V2", ["A", "B"], start_time=30.0, travel_times={("A", "B"): 5.0}),
+        VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 5.0},
+        ),
+        VehicleRoute(
+            "V2", ["A", "B"], start_time=30.0,
+            travel_times={("A", "B"): 5.0},
+        ),
     ]
     occs = prepare_occupancies(routes)
 
@@ -41,13 +50,18 @@ def test_delta_t_arrival_gap_rule():
 
 
 def test_simultaneous_exit_and_entry_boundary():
-    """Boundary check: V1 [0, 5) and V2 [5, 10) at delta_t=0 must not produce a 0-duration clash."""
+    """Touching intervals must not clash when delta_t is zero."""
     occs = [
         RoadOccupancy("V1", ("A", "B"), entry_time=0.0, exit_time=5.0),
         RoadOccupancy("V2", ("A", "B"), entry_time=5.0, exit_time=10.0),
     ]
-    sweep_res = detect_conflicts(occs, edge_capacities={("A", "B"): 1}, delta_t=0.0)
-    bf_res = verify_conflicts_brute_force(occs, edge_capacities={("A", "B"): 1}, delta_t=0.0)
+    capacities = {("A", "B"): 1}
+    sweep_res = detect_conflicts(
+        occs, edge_capacities=capacities, delta_t=0.0
+    )
+    bf_res = verify_conflicts_brute_force(
+        occs, edge_capacities=capacities, delta_t=0.0
+    )
 
     assert sweep_res == []
     assert bf_res == []
@@ -66,7 +80,9 @@ def test_simultaneous_exit_entry_while_overloaded():
     ]
     caps = {("A", "B"): 1}
     sweep_res = detect_conflicts(occs, edge_capacities=caps, delta_t=0.0)
-    bf_res = verify_conflicts_brute_force(occs, edge_capacities=caps, delta_t=0.0)
+    bf_res = verify_conflicts_brute_force(
+        occs, edge_capacities=caps, delta_t=0.0
+    )
 
     assert sweep_res == bf_res
     assert len(sweep_res) == 1
@@ -77,7 +93,7 @@ def test_simultaneous_exit_entry_while_overloaded():
 
 
 def test_invalid_inputs_rejected():
-    """Negative delta_t and non-positive edge capacities must raise ValueError."""
+    """Reject negative delta_t and non-positive edge capacities."""
     occs = [RoadOccupancy("V1", ("A", "B"), entry_time=0.0, exit_time=5.0)]
     with pytest.raises(ValueError):
         detect_conflicts(occs, delta_t=-1.0)
@@ -86,11 +102,17 @@ def test_invalid_inputs_rejected():
 
 
 def test_should_negotiate_3_arguments():
-    """Tests should_negotiate with 3 arguments on ongoing and upcoming conflicts."""
+    """Test should_negotiate with three arguments."""
     trigger = ThresholdTrigger(tau=60.0)
     routes = {
-        "V1": VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 50.0}),
-        "V2": VehicleRoute("V2", ["A", "B"], start_time=10.0, travel_times={("A", "B"): 50.0}),
+        "V1": VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 50.0},
+        ),
+        "V2": VehicleRoute(
+            "V2", ["A", "B"], start_time=10.0,
+            travel_times={("A", "B"): 50.0},
+        ),
     }
     r1 = routes["V1"]
     r2 = routes["V2"]
@@ -104,7 +126,7 @@ def test_should_negotiate_3_arguments():
 
 
 def test_threshold_trigger_uses_delta_t_and_edge_capacities():
-    """ThresholdTrigger uses its delta_t and capacity settings when given three arguments."""
+    """Use delta_t and capacity settings when given three arguments."""
     routes = {
         "V1": VehicleRoute("V1", ["A", "B"], 0.0, {("A", "B"): 5.0}),
         "V2": VehicleRoute("V2", ["A", "B"], 30.0, {("A", "B"): 5.0}),
@@ -121,13 +143,19 @@ def test_threshold_trigger_uses_delta_t_and_edge_capacities():
     ) is True
 
     three_routes = {
-        f"V{i}": VehicleRoute(f"V{i}", ["A", "B"], float(i), {("A", "B"): 10.0})
+        f"V{i}": VehicleRoute(
+            f"V{i}", ["A", "B"], float(i), {("A", "B"): 10.0}
+        )
         for i in range(3)
     }
-    assert ThresholdTrigger(tau=20.0, edge_capacities={("A", "B"): 2}).should_negotiate(
+    assert ThresholdTrigger(
+        tau=20.0, edge_capacities={("A", "B"): 2}
+    ).should_negotiate(
         three_routes["V0"], three_routes, t=0.0
     ) is True
-    assert ThresholdTrigger(tau=20.0, edge_capacities={("A", "B"): 3}).should_negotiate(
+    assert ThresholdTrigger(
+        tau=20.0, edge_capacities={("A", "B"): 3}
+    ).should_negotiate(
         three_routes["V0"], three_routes, t=0.0
     ) is False
 
@@ -136,9 +164,18 @@ def test_always_trigger_in_and_out_of_conflict():
     """AlwaysTrigger fires only for vehicles involved in a conflict."""
     trigger = AlwaysTrigger()
     routes = {
-        "V1": VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}),
-        "V2": VehicleRoute("V2", ["A", "B"], start_time=2.0, travel_times={("A", "B"): 10.0}),
-        "V3": VehicleRoute("V3", ["C", "D"], start_time=0.0, travel_times={("C", "D"): 10.0}),
+        "V1": VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 10.0},
+        ),
+        "V2": VehicleRoute(
+            "V2", ["A", "B"], start_time=2.0,
+            travel_times={("A", "B"): 10.0},
+        ),
+        "V3": VehicleRoute(
+            "V3", ["C", "D"], start_time=0.0,
+            travel_times={("C", "D"): 10.0},
+        ),
     }
     assert trigger.should_negotiate(routes["V1"], routes, t=0.0) is True
     assert trigger.should_negotiate(routes["V2"], routes, t=0.0) is True
@@ -180,13 +217,21 @@ def test_random_cross_check_detect_conflicts():
 
         caps = {e: rng.randint(1, 2) for e in edges}
         dt = rng.choice([0.0, 0.5, 1.0, 2.5])
-        sweep_res = detect_conflicts(occupancies, edge_capacities=caps, delta_t=dt)
-        bf_res = verify_conflicts_brute_force(occupancies, edge_capacities=caps, delta_t=dt)
+        sweep_res = detect_conflicts(
+            occupancies, edge_capacities=caps, delta_t=dt
+        )
+        bf_res = verify_conflicts_brute_force(
+            occupancies, edge_capacities=caps, delta_t=dt
+        )
 
-        assert len(sweep_res) == len(bf_res), f"Mismatch count in trial {trial}"
+        assert len(sweep_res) == len(bf_res), (
+            f"Mismatch count in trial {trial}"
+        )
         for s_c, b_c in zip(sweep_res, bf_res):
             assert s_c.edge == b_c.edge, f"Mismatch edge in trial {trial}"
-            assert s_c.vehicles == b_c.vehicles, f"Mismatch vehicles in trial {trial}"
+            assert s_c.vehicles == b_c.vehicles, (
+                f"Mismatch vehicles in trial {trial}"
+            )
             assert abs(s_c.overlap_start - b_c.overlap_start) < 1e-6
             assert abs(s_c.overlap_end - b_c.overlap_end) < 1e-6
 
@@ -194,9 +239,18 @@ def test_random_cross_check_detect_conflicts():
 def test_three_vehicles_on_two_slot_road():
     """Specific check for 3 vehicles on a 2-slot road."""
     routes = [
-        VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 20.0}),
-        VehicleRoute("V2", ["A", "B"], start_time=5.0, travel_times={("A", "B"): 20.0}),
-        VehicleRoute("V3", ["A", "B"], start_time=10.0, travel_times={("A", "B"): 20.0}),
+        VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 20.0},
+        ),
+        VehicleRoute(
+            "V2", ["A", "B"], start_time=5.0,
+            travel_times={("A", "B"): 20.0},
+        ),
+        VehicleRoute(
+            "V3", ["A", "B"], start_time=10.0,
+            travel_times={("A", "B"): 20.0},
+        ),
     ]
     occs = prepare_occupancies(routes)
     caps = {("A", "B"): 2}
@@ -214,7 +268,7 @@ def test_three_vehicles_on_two_slot_road():
 
 
 def test_same_vehicle_occupancies_do_not_consume_multiple_slots():
-    """Multiple overlapping occupancy records for one vehicle count as one vehicle."""
+    """Count overlapping occupancy records as a single vehicle."""
     occs = [
         RoadOccupancy("V1", ("A", "B"), 0.0, 10.0),
         RoadOccupancy("V1", ("A", "B"), 1.0, 9.0),
@@ -273,7 +327,7 @@ def test_credits_never_go_negative():
 
 
 def test_vickrey_tie_breaking_lowest_id():
-    """Equal bids must deterministically award the slot to the lexicographically lowest ID."""
+    """Award equal bids to the lexicographically lowest ID."""
     r2 = VehicleRoute(
         "V2", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
         priority_weight=2.0, detour_extra_time=5.0,
@@ -313,7 +367,7 @@ def test_input_list_order_independence():
 
 
 def test_truthfulness_sanity_check_under_budgets():
-    """Truthful bids are not worse across binding and non-binding credit budgets."""
+    """Truthful bids are not worse across credit budget constraints."""
     credit_levels = [0.5, 3.0, 10.0, 100.0]
     true_value = 5.0
     deviations = [0.0, 2.0, 4.0, 6.0, 9.0, 12.0]
@@ -334,14 +388,17 @@ def test_truthfulness_sanity_check_under_budgets():
                     "V1": VirtualCreditBudget("V1", credits),
                     "V2": VirtualCreditBudget("V2", 100.0),
                 }
-                winner, _, price = run_vickrey_auction([bidder, rival], budgets)
+                winner, _, price = run_vickrey_auction(
+                    [bidder, rival], budgets
+                )
                 return true_value - price if winner == "V1" else 0.0
 
             truthful_payoff = payoff(true_value)
             for reported_value in deviations:
                 assert truthful_payoff >= payoff(reported_value) - 1e-6, (
                     f"Truthful payoff was worse with credits={credits}, "
-                    f"competing bid={competing_bid}, deviation={reported_value}"
+                    f"competing bid={competing_bid}, "
+                    f"deviation={reported_value}"
                 )
 
 
@@ -419,7 +476,10 @@ def test_table_driven_threshold_trigger():
             earliest_arrival=0.0,
         )
         t_now = 50.0 - ttc_val
-        route = VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0})
+        route = VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 10.0},
+        )
         routes = {"V1": route}
 
         result = trigger.should_negotiate(route, routes, t_now, conflict=c)
@@ -435,18 +495,26 @@ def test_never_trigger_zero_messages():
     """Verifies NeverTrigger yields exactly zero trigger events."""
     trigger = NeverTrigger()
     routes = {
-        "V1": VehicleRoute("V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0}),
-        "V2": VehicleRoute("V2", ["A", "B"], start_time=2.0, travel_times={("A", "B"): 10.0}),
+        "V1": VehicleRoute(
+            "V1", ["A", "B"], start_time=0.0,
+            travel_times={("A", "B"): 10.0},
+        ),
+        "V2": VehicleRoute(
+            "V2", ["A", "B"], start_time=2.0,
+            travel_times={("A", "B"): 10.0},
+        ),
     }
     occs = prepare_occupancies(routes.values())
     conflicts = detect_conflicts(occs)
 
-    events = filter_and_trigger_conflicts(conflicts, trigger, routes, t_now=0.0)
+    events = filter_and_trigger_conflicts(
+        conflicts, trigger, routes, t_now=0.0
+    )
     assert len(events) == 0
 
 
 def test_message_counter_d7_and_allocations():
-    """Verifies 2 vehicles produce 6 negotiation messages and tracks allocations separately."""
+    """Track negotiation messages and allocations for two vehicles."""
     routes = [
         VehicleRoute(
             "V1", ["A", "B"], start_time=0.0, travel_times={("A", "B"): 10.0},
@@ -457,7 +525,10 @@ def test_message_counter_d7_and_allocations():
             priority_weight=1.0,
         ),
     ]
-    budgets = {"V1": VirtualCreditBudget("V1", 50.0), "V2": VirtualCreditBudget("V2", 50.0)}
+    budgets = {
+        "V1": VirtualCreditBudget("V1", 50.0),
+        "V2": VirtualCreditBudget("V2", 50.0),
+    }
     counter = MessageCounter()
 
     run_vickrey_auction(routes, budgets, counter)
