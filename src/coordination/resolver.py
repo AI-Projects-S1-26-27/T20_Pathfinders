@@ -223,6 +223,14 @@ def resolve_conflicts_sequentially(
     4. Run a Vickrey auction on the earliest conflict using real detour costs.
     5. Losers yield until conflict.overlap_end (recorded in outcome.hold_until
        for simulator hold(vehicle_id, until_t) / yield_road execution).
+
+    Notes & Simplifications:
+    - Raises RuntimeError if triggered conflicts remain after max_rounds.
+    - When a NegotiationRateLimiter is supplied, suppressed repeat auctions on
+      the same (edge, vehicles) group mean the returned schedule is not
+      guaranteed to be conflict-free.
+    - Yielding shifts a losing vehicle's entire route start_time forward
+      rather than inserting a localized wait at the contested edge.
     """
     if max_rounds < 1:
         raise ValueError("max_rounds must be at least 1")
