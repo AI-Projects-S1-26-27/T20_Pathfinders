@@ -232,3 +232,44 @@ def test_violations_are_planted_in_one_log_per_mode(tmp_path):
     assert res["planted"]["full"]["result"]["KR-12"] is True
     assert res["planted"]["full"]["result"]["KR-3"] is None  # needs the map
     assert "| Planted | centralized | full |" in report(res)
+
+
+def test_closure_effects_are_counted_per_run_and_per_mode(tmp_path):
+    from src.kr.audit_sweep import run_info
+
+    def ev(event, run=RUN, **payload):
+        return row(T + 50, event, run=run, **payload)
+
+    rows = clean()[:-1] + [
+        ev("disruption", type="closure", edge=[1, 2, 0], expiry=T + 900),
+        ev("disruption", type="closure", edge=[2, 1, 0], expiry=T + 900),
+        ev("disruption", type="traffic_spike", edge=[0, 1, 0]),
+        ev("replan", trigger="closure", edge=[1, 2, 0]),  # changed a route
+        ev("replan", trigger="closure", edge=[1, 2, 0]),  # ... and a second one
+        ev("replan", trigger="traffic_spike", edge=[0, 1, 0]),  # not a closure
+        ev("replan_kept", trigger="closure", edge=[2, 1, 0]),  # checked, kept
+        ev("replan_kept", trigger="new_order"),  # not a closure
+        ev("blocked_wait", edge=[1, 2, 0]),
+        clean()[-1],
+    ]
+    info = run_info(rows)
+    assert info["closures"] == 2 and info["closure_replans_changed"] == 2
+    assert info["closure_replans_kept"] == 1 and info["blocked_waits"] == 1
+    empty = run_info(clean())
+    assert (empty["closure_replans_changed"], empty["closure_replans_kept"]) == (0, 0)
+
+    d, cdir = sweep_dir(tmp_path)
+    write_log(d, RUN, rows)
+    other = "toy_s3__independent__r10__s9001"
+    write_log(d, other, [dict(r, mode="independent") for r in clean(other)])
+    res = audit_sweep(d, cdir, use_map=False, do_plant=False)
+    assert res["closure_effects_by_mode"] == {
+        "full": {"runs": 1, "closures": 2, "closure_replans_changed": 2,
+                 "closure_replans_kept": 1, "blocked_waits": 1},
+        "independent": {"runs": 1, "closures": 0, "closure_replans_changed": 0,
+                        "closure_replans_kept": 0, "blocked_waits": 0},
+    }
+    md = report(res)
+    assert "| Routes changed after a closure | Routes kept after a closure |" in md
+    assert "| toy_s3 | full | 1 |" in md and "| 2 | 2 | 1 | 1 |" in md
+    assert "| **all** | **full** | **1** | | | | **2** | **2** | **1** | **1** | |" in md

@@ -124,6 +124,10 @@ small scenarios were run centralized: one took about 5 minutes, and a large one 
   time window); every order delivered, none failed, 649 closures in all.
 - All 8 planted violations (KR-12, NODE, KR-11, KR-8, KR-1, KR-4, KR-3, PATH) were flagged in all
   three modes.
+- Closures and routes (new columns in the report): 278 closures in each decentralized mode (18 runs
+  each). After them, 9 routes changed in independent mode; in full mode 9 changed and 1 was checked
+  and kept. The 6 centralized runs had 93 closures and no closure replans. No vehicle waited at a
+  closed road.
 - **Log-schema gap found (TODO(R4))**: in centralized mode, all 600 `order_delivered` rows have only
   `order_id`, no `node` and no `demand` (`src/allocation/sim_runner.py`, `log_event('order_delivered',
   {'order_id': order.id}, v.id)`). The vehicle was at the order's node in all 600. A first version of

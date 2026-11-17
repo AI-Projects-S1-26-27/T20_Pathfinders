@@ -118,11 +118,12 @@ sweep):
 |---|---|---|---|---|
 | 42: 9 scenarios x independent/full x 2 seeds, plus 3 small scenarios x centralized x 2 seeds; 10 disruptions/h | 66,831 | 7,800 | **0** | 8 of 8, in each mode |
 
-State with it what the zero covers. It covers 12 checks: served once, delivery node, release, window
+State with it what the zero covers. 12 checks are run: served once, delivery node, release, window
 start and end, service after arrival, capacity, closures, road direction, road class, zones, and path
-integrity. It does not cover KR-10 (no shift end in the scenarios) or allocation decisions (KR-2,
-KR-13-KR-15). KR-3 cannot fail with a small-only fleet, and there are no zones for KR-6. Centralized
-runs log deliveries without `node`/`demand`, so for them NODE is checked by the vehicle's position.
+integrity. KR-6 was checked 0 times (no zones are defined) and KR-3 cannot fail with a small-only
+fleet, so 10 of the 12 could have failed. The zero does not cover KR-10 (no shift end in the
+scenarios) or allocation decisions (KR-2, KR-13-KR-15). Centralized runs log deliveries without
+`node`/`demand`, so for them NODE is checked by the vehicle's position.
 
 **T1b. How often rules block** (`reports/rule_rejections.md`, 9 seed-0 scenarios: 1,800 orders,
 30,000 order-vehicle checks; the two-allocation B2 result is from PR #46). The insertion and
@@ -136,7 +137,7 @@ The closure row gives both.
 | | KR-10 back by shift end | 0 as committed; 4 checks if every vehicle is due back by 10:00 (only shift end tested) |
 | Order no vehicle can take | KR-15 | 0 of 1,800 |
 | Road for a large vehicle, from 3 hypothetical depots | KR-3 | 81.3% of roads closed to them (4,922 of 6,056; 4,800 of them residential); 1,299 of 1,800 (order node, depot) trips impossible (600 order nodes x 3 depots); detoured trips 27.6% longer |
-| Road during the run | KR-4 closure | Contract-net, the allocation the experiments use: 0 of 7 distinct closures changed a route (0 of 63 closure-scenario pairs, no route check triggered). Stand-in hand-written routes: 3 of 7 (13 of 63 pairs). Both: 0 vehicles stuck, 0 audit violations |
+| Road during the run | KR-4 closure | 9 seed-0 audit-demo runs (63 closure-scenario pairs, 7 distinct closures): with contract-net, the allocation the experiments use, 0 of 7 closures changed a route and no closure triggered a route check; with stand-in hand-written routes, 3 of 7 (13 of 63 pairs). 42-run pilot sweep (`reports/audit_sweep_pilot.md`): 278 closures in each decentralized mode (18 runs each); after them 9 routes changed in independent mode, and 9 changed and 1 was checked and kept in full mode; 0 in the 6 centralized runs (93 closures). Everywhere: 0 vehicles waiting at a closed road, 0 audit violations |
 
 Notes to keep next to T1b:
 - The insertion rows come from a stand-alone greedy allocation at planning time (least extra time, in
@@ -145,9 +146,12 @@ Notes to keep next to T1b:
   fleet capacity is sized so demand is 80% of it, and every order is loaded at 06:00 with no unloading.
 - A large-vehicle trip is an (order node, hypothetical depot) pair, not an order; that there are also
   1,800 orders is a coincidence. Most trips are impossible because of the rule and the map together.
-- In our runs, closures did not force reroutes: with contract-net no closure lay on a vehicle's
-  remaining route. With the stand-in's routes, fixed in advance, the same closures did force
-  reroutes. With 7 closures from one seed, neither is a rate.
+- Closures sometimes force reroutes in our runs. In the 9 seed-0 audit-demo runs (63 closure-scenario
+  pairs), no closure triggered a route check under contract-net, while with the stand-in's routes,
+  fixed in advance, 3 of the 7 closures changed a route. In the 42-run pilot sweep, also with
+  contract-net, closures did change routes: 9 times in each decentralized mode, out of 278 closures
+  per mode (`reports/audit_sweep_pilot.md`). Neither is a rate: one seed in the first case, two run
+  seeds and 9 scenarios in the second.
 
 **Supporting numbers for the text** (`docs/csp_pruning.md`, 30 seeds; `docs/heuristic_gap.md`):
 - 12 orders x 4 vehicles. Mean nodes: plain backtracking 46,342 (11 of 30 hit the 100,000-node limit),
@@ -166,4 +170,6 @@ Notes to keep next to T1b:
   data and the period, not evidence that the rule is unnecessary.
 - The fleet is small-only, so KR-3 is measured as a hypothetical (B1) and cannot fail in the audit.
   KR-6 zones are not defined for our map. KR-10 is not exercised, because no scenario sets a shift end.
-- The audit checks outcomes in the log, not allocation decisions. Its zero is on the 12 listed checks.
+- The audit checks outcomes in the log, not allocation decisions. 12 checks are run, but KR-6 was
+  checked 0 times (no zones) and KR-3 cannot fail with a small-only fleet, so its zero is on the 10
+  checks that could have failed.

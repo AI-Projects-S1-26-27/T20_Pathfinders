@@ -25,29 +25,32 @@ KR-7/KR-8 are checked only for orders with a time window. KR-6 is checked 0 time
 
 ## By scenario and mode
 
-| Scenario | Mode | Runs | Road entries | Deliveries | Failed orders | Closures | Violations |
-|---|---|---|---|---|---|---|---|
-| large_clustered_s0 | full | 2 | 4,190 | 600 | 0 | 30 | 0 |
-| large_clustered_s0 | independent | 2 | 4,188 | 600 | 0 | 30 | 0 |
-| large_hotspot_s0 | full | 2 | 4,982 | 600 | 0 | 31 | 0 |
-| large_hotspot_s0 | independent | 2 | 4,964 | 600 | 0 | 31 | 0 |
-| large_uniform_s0 | full | 2 | 4,576 | 600 | 0 | 31 | 0 |
-| large_uniform_s0 | independent | 2 | 4,562 | 600 | 0 | 31 | 0 |
-| medium_clustered_s0 | full | 2 | 3,156 | 400 | 0 | 31 | 0 |
-| medium_clustered_s0 | independent | 2 | 3,157 | 400 | 0 | 31 | 0 |
-| medium_hotspot_s0 | full | 2 | 3,601 | 400 | 0 | 31 | 0 |
-| medium_hotspot_s0 | independent | 2 | 3,573 | 400 | 0 | 31 | 0 |
-| medium_uniform_s0 | full | 2 | 3,425 | 400 | 0 | 31 | 0 |
-| medium_uniform_s0 | independent | 2 | 3,419 | 400 | 0 | 31 | 0 |
-| small_clustered_s0 | centralized | 2 | 1,872 | 200 | 0 | 31 | 0 |
-| small_clustered_s0 | full | 2 | 2,244 | 200 | 0 | 31 | 0 |
-| small_clustered_s0 | independent | 2 | 2,244 | 200 | 0 | 31 | 0 |
-| small_hotspot_s0 | centralized | 2 | 2,059 | 200 | 0 | 31 | 0 |
-| small_hotspot_s0 | full | 2 | 2,146 | 200 | 0 | 31 | 0 |
-| small_hotspot_s0 | independent | 2 | 2,136 | 200 | 0 | 31 | 0 |
-| small_uniform_s0 | centralized | 2 | 1,957 | 200 | 0 | 31 | 0 |
-| small_uniform_s0 | full | 2 | 2,198 | 200 | 0 | 31 | 0 |
-| small_uniform_s0 | independent | 2 | 2,182 | 200 | 0 | 31 | 0 |
+| Scenario | Mode | Runs | Road entries | Deliveries | Failed orders | Closures | Routes changed after a closure | Routes kept after a closure | Waits at a closed road | Violations |
+|---|---|---|---|---|---|---|---|---|---|---|
+| large_clustered_s0 | full | 2 | 4,190 | 600 | 0 | 30 | 1 | 1 | 0 | 0 |
+| large_clustered_s0 | independent | 2 | 4,188 | 600 | 0 | 30 | 1 | 0 | 0 | 0 |
+| large_hotspot_s0 | full | 2 | 4,982 | 600 | 0 | 31 | 2 | 0 | 0 | 0 |
+| large_hotspot_s0 | independent | 2 | 4,964 | 600 | 0 | 31 | 2 | 0 | 0 | 0 |
+| large_uniform_s0 | full | 2 | 4,576 | 600 | 0 | 31 | 1 | 0 | 0 | 0 |
+| large_uniform_s0 | independent | 2 | 4,562 | 600 | 0 | 31 | 1 | 0 | 0 | 0 |
+| medium_clustered_s0 | full | 2 | 3,156 | 400 | 0 | 31 | 2 | 0 | 0 | 0 |
+| medium_clustered_s0 | independent | 2 | 3,157 | 400 | 0 | 31 | 2 | 0 | 0 | 0 |
+| medium_hotspot_s0 | full | 2 | 3,601 | 400 | 0 | 31 | 1 | 0 | 0 | 0 |
+| medium_hotspot_s0 | independent | 2 | 3,573 | 400 | 0 | 31 | 1 | 0 | 0 | 0 |
+| medium_uniform_s0 | full | 2 | 3,425 | 400 | 0 | 31 | 2 | 0 | 0 | 0 |
+| medium_uniform_s0 | independent | 2 | 3,419 | 400 | 0 | 31 | 2 | 0 | 0 | 0 |
+| small_clustered_s0 | centralized | 2 | 1,872 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_clustered_s0 | full | 2 | 2,244 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_clustered_s0 | independent | 2 | 2,244 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_hotspot_s0 | centralized | 2 | 2,059 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_hotspot_s0 | full | 2 | 2,146 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_hotspot_s0 | independent | 2 | 2,136 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_uniform_s0 | centralized | 2 | 1,957 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_uniform_s0 | full | 2 | 2,198 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| small_uniform_s0 | independent | 2 | 2,182 | 200 | 0 | 31 | 0 | 0 | 0 | 0 |
+| **all** | **centralized** | **6** | | | | **93** | **0** | **0** | **0** | |
+| **all** | **full** | **18** | | | | **278** | **9** | **1** | **0** | |
+| **all** | **independent** | **18** | | | | **278** | **9** | **0** | **0** | |
 
 ## Log-schema gaps (not violations)
 

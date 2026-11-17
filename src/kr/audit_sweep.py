@@ -102,7 +102,21 @@ def run_info(rows: list[dict]) -> dict:
             for r in rows
             if r.get("event") == "disruption" and (r.get("payload") or {}).get("type") == "closure"
         ),
+        # what the closures did to routes: a replan after a closure changed a vehicle's route,
+        # a replan_kept means the route was checked and kept, a blocked_wait is a vehicle that
+        # had to wait at a closed road
+        "closure_replans_changed": _count(rows, "replan", "closure"),
+        "closure_replans_kept": _count(rows, "replan_kept", "closure"),
+        "blocked_waits": sum(1 for r in rows if r.get("event") == "blocked_wait"),
     }
+
+
+def _count(rows, event, trigger) -> int:
+    return sum(
+        1
+        for r in rows
+        if r.get("event") == event and (r.get("payload") or {}).get("trigger") == trigger
+    )
 
 
 # ---------------------------------------------------------------- planted violations
@@ -261,10 +275,22 @@ def audit_sweep(
         "road_entries_restricted_vehicles": sum(
             r["road_entries_restricted_vehicles"] for r in runs
         ),
+        "closure_effects_by_mode": _closure_effects_by_mode(runs),
         "schema_gaps": {k: {"rows": gaps[k], "modes": sorted(gap_modes[k])} for k in sorted(gaps)},
         "planted": dict(sorted(planted.items())) if do_plant else None,
         "runs": runs,
     }
+
+
+def _closure_effects_by_mode(runs) -> dict:
+    keys = ("closures", "closure_replans_changed", "closure_replans_kept", "blocked_waits")
+    out: dict = {}
+    for r in runs:
+        t = out.setdefault(r["mode"] or "?", {"runs": 0, **{k: 0 for k in keys}})
+        t["runs"] += 1
+        for k in keys:
+            t[k] += r[k]
+    return dict(sorted(out.items()))
 
 
 def status(res: dict) -> int:
@@ -324,8 +350,9 @@ def report(res: dict) -> str:
         "## By scenario and mode",
         "",
         "| Scenario | Mode | Runs | Road entries | Deliveries | Failed orders | Closures "
+        "| Routes changed after a closure | Routes kept after a closure | Waits at a closed road "
         "| Violations |",
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     groups = defaultdict(list)
     for r in res["runs"]:
@@ -334,7 +361,16 @@ def report(res: dict) -> str:
         out.append(
             f"| {sc} | {mode} | {len(rs)} | {sum(r['checked'].get('PATH', 0) for r in rs):,} | "
             f"{sum(r['delivered'] for r in rs):,} | {sum(r['failed'] for r in rs)} | "
-            f"{sum(r['closures'] for r in rs)} | {sum(len(r['violations']) for r in rs)} |"
+            f"{sum(r['closures'] for r in rs)} | {sum(r['closure_replans_changed'] for r in rs)} | "
+            f"{sum(r['closure_replans_kept'] for r in rs)} | "
+            f"{sum(r['blocked_waits'] for r in rs)} | "
+            f"{sum(len(r['violations']) for r in rs)} |"
+        )
+    for mode, t in res["closure_effects_by_mode"].items():
+        out.append(
+            f"| **all** | **{mode}** | **{t['runs']}** | | | | **{t['closures']}** | "
+            f"**{t['closure_replans_changed']}** | **{t['closure_replans_kept']}** | "
+            f"**{t['blocked_waits']}** | |"
         )
     reasons = Counter()
     for r in res["runs"]:

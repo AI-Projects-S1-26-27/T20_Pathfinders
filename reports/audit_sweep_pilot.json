@@ -39,6 +39,29 @@
   "PATH": 0
  },
  "road_entries_restricted_vehicles": 0,
+ "closure_effects_by_mode": {
+  "centralized": {
+   "runs": 6,
+   "closures": 93,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0
+  },
+  "full": {
+   "runs": 18,
+   "closures": 278,
+   "closure_replans_changed": 9,
+   "closure_replans_kept": 1,
+   "blocked_waits": 0
+  },
+  "independent": {
+   "runs": 18,
+   "closures": 278,
+   "closure_replans_changed": 9,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0
+  }
+ },
  "schema_gaps": {
   "order_delivered without demand": {
    "rows": 600,
@@ -106,6 +129,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2103,
     "KR-4": 2103,
@@ -149,6 +175,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 18,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 1,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2087,
     "KR-4": 2087,
@@ -192,6 +221,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2101,
     "KR-4": 2101,
@@ -235,6 +267,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 18,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2087,
     "KR-4": 2087,
@@ -278,6 +313,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2502,
     "KR-4": 2502,
@@ -321,6 +359,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2480,
     "KR-4": 2480,
@@ -364,6 +405,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2493,
     "KR-4": 2493,
@@ -407,6 +451,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2471,
     "KR-4": 2471,
@@ -450,6 +497,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2290,
     "KR-4": 2290,
@@ -493,6 +543,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2286,
     "KR-4": 2286,
@@ -536,6 +589,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2283,
     "KR-4": 2283,
@@ -579,6 +635,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 2279,
     "KR-4": 2279,
@@ -622,6 +681,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1575,
     "KR-4": 1575,
@@ -665,6 +727,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 2,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1581,
     "KR-4": 1581,
@@ -708,6 +773,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1576,
     "KR-4": 1576,
@@ -751,6 +819,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 2,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1581,
     "KR-4": 1581,
@@ -794,6 +865,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1801,
     "KR-4": 1801,
@@ -837,6 +911,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1800,
     "KR-4": 1800,
@@ -880,6 +957,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1787,
     "KR-4": 1787,
@@ -923,6 +1003,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1786,
     "KR-4": 1786,
@@ -966,6 +1049,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1716,
     "KR-4": 1716,
@@ -1009,6 +1095,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1709,
     "KR-4": 1709,
@@ -1052,6 +1141,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1713,
     "KR-4": 1713,
@@ -1095,6 +1187,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 1,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1706,
     "KR-4": 1706,
@@ -1138,6 +1233,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 936,
     "KR-4": 936,
@@ -1184,6 +1282,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 936,
     "KR-4": 936,
@@ -1230,6 +1331,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1122,
     "KR-4": 1122,
@@ -1273,6 +1377,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1122,
     "KR-4": 1122,
@@ -1316,6 +1423,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1122,
     "KR-4": 1122,
@@ -1359,6 +1469,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1122,
     "KR-4": 1122,
@@ -1402,6 +1515,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1040,
     "KR-4": 1040,
@@ -1448,6 +1564,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1019,
     "KR-4": 1019,
@@ -1494,6 +1613,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1073,
     "KR-4": 1073,
@@ -1537,6 +1659,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1073,
     "KR-4": 1073,
@@ -1580,6 +1705,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1068,
     "KR-4": 1068,
@@ -1623,6 +1751,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1068,
     "KR-4": 1068,
@@ -1666,6 +1797,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 973,
     "KR-4": 973,
@@ -1712,6 +1846,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 984,
     "KR-4": 984,
@@ -1758,6 +1895,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1099,
     "KR-4": 1099,
@@ -1801,6 +1941,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1099,
     "KR-4": 1099,
@@ -1844,6 +1987,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 12,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1091,
     "KR-4": 1091,
@@ -1887,6 +2033,9 @@
    "failed": 0,
    "failed_by_reason": {},
    "closures": 19,
+   "closure_replans_changed": 0,
+   "closure_replans_kept": 0,
+   "blocked_waits": 0,
    "checked": {
     "PATH": 1091,
     "KR-4": 1091,
