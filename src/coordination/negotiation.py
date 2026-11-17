@@ -44,6 +44,8 @@ def run_vickrey_auction(
 
     m_agents = len(contesting_routes)
     if msg_counter:
+        # D7: m results for m agents (1 request, 1 response, 1 result per
+        # participant).
         for _ in range(m_agents):
             msg_counter.log_message("negotiation_request")
             msg_counter.log_message("negotiation_response")
@@ -76,6 +78,8 @@ def run_vickrey_auction(
 
     winner_budget = budgets.get(winner.vehicle_id)
 
+# No eligible winner if top bidder cannot afford the second-highest bid
+# or all bids are 0.
     if (
         winner_budget is None
         or winner_budget.credits < second_highest_bid

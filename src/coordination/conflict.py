@@ -72,6 +72,7 @@ def prepare_occupancies(routes: Iterable[VehicleRoute]) -> List[RoadOccupancy]:
         if len(route.nodes) < 2:
             continue
 
+# Accumulate planned [enter, exit] intervals along each directed edge.
         current_time = float(route.start_time)
         for u, v in zip(route.nodes[:-1], route.nodes[1:]):
             if u == v:
@@ -166,6 +167,7 @@ def detect_conflicts(
                 idx += 1
 
             active_vehicles = {o.vehicle_id for o in active_occupancies}
+# Conflict occurs when concurrent active vehicles exceed edge capacity k_e.
             if len(active_vehicles) > k_e:
                 if not in_overload:
                     in_overload = True

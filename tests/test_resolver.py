@@ -342,3 +342,37 @@ def test_secondary_overlap_on_multi_slot_edge_resolves_cleanly():
         )
         == []
     )
+
+
+def test_rate_limiter_skips_repeat_group_and_leaves_conflict_unresolved():
+    """Rate limiter blocks repeat auction for same (edge, group) within 60s."""
+    routes = {
+        "V1": VehicleRoute(
+            "V1", ["A", "B"], 10.0, {("A", "B"): 10.0}, priority_weight=2.0
+        ),
+        "V2": VehicleRoute(
+            "V2", ["A", "B"], 12.0, {("A", "B"): 10.0}, priority_weight=1.0
+        ),
+    }
+    caps = {("A", "B"): 1}
+    budgets = {v_id: VirtualCreditBudget(v_id, 50.0) for v_id in routes}
+    limiter = NegotiationRateLimiter(cooldown_s=60.0)
+    limiter.record_negotiation(("A", "B"), t_now=0.0, vehicles=["V1", "V2"])
+    counter = MessageCounter()
+
+    updated, outcomes = resolve_conflicts_sequentially(
+        routes,
+        ThresholdTrigger(tau=60.0, edge_capacities=caps),
+        budgets,
+        t_now=15.0,
+        edge_capacities=caps,
+        msg_counter=counter,
+        rate_limiter=limiter,
+    )
+
+    assert outcomes == []
+    assert counter.total_negotiation_messages == 0
+    remaining = detect_conflicts(
+        prepare_occupancies(updated.values()), edge_capacities=caps
+    )
+    assert len(remaining) == 1
