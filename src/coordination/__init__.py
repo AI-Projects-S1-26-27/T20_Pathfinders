@@ -1,44 +1,57 @@
-"""Coordination Module: Conflict Detection, Triggers, and Vickrey Auctions."""
+"""Multi-Agent Coordination Package (Conflict Detection, Trigger, Auction
+& Resolver).
+"""
 
 from src.coordination.conflict import (
     Conflict,
+    Edge,
     RoadOccupancy,
     VehicleRoute,
     detect_conflicts,
     prepare_occupancies,
-    verify_conflicts_brute_force,
 )
-from src.coordination.messages import CoordinationMessage, MessageCounter
+from src.coordination.messages import MessageCounter
 from src.coordination.negotiation import (
     VirtualCreditBudget,
     calculate_delay_cost,
     run_vickrey_auction,
 )
+from src.coordination.resolver import (
+    D5_CLASS_CAPACITIES,
+    NegotiationRateLimiter,
+    ResolutionOutcome,
+    build_edge_capacities_from_classes,
+    compute_real_detour_extra_time,
+    resolve_conflicts_sequentially,
+    route_etas_to_vehicle_route,
+)
 from src.coordination.trigger import (
     AlwaysTrigger,
-    ConflictTriggerEvent,
     NeverTrigger,
     ThresholdTrigger,
     TriggerPolicy,
-    filter_and_trigger_conflicts,
 )
 
 __all__ = [
-    "VehicleRoute",
-    "RoadOccupancy",
-    "Conflict",
-    "ConflictTriggerEvent",
-    "CoordinationMessage",
-    "MessageCounter",
-    "VirtualCreditBudget",
-    "TriggerPolicy",
-    "NeverTrigger",
     "AlwaysTrigger",
+    "Conflict",
+    "D5_CLASS_CAPACITIES",
+    "Edge",
+    "MessageCounter",
+    "NegotiationRateLimiter",
+    "NeverTrigger",
+    "ResolutionOutcome",
+    "RoadOccupancy",
     "ThresholdTrigger",
-    "prepare_occupancies",
-    "detect_conflicts",
-    "verify_conflicts_brute_force",
+    "TriggerPolicy",
+    "VehicleRoute",
+    "VirtualCreditBudget",
+    "build_edge_capacities_from_classes",
     "calculate_delay_cost",
+    "compute_real_detour_extra_time",
+    "detect_conflicts",
+    "prepare_occupancies",
+    "resolve_conflicts_sequentially",
+    "route_etas_to_vehicle_route",
     "run_vickrey_auction",
-    "filter_and_trigger_conflicts",
 ]
