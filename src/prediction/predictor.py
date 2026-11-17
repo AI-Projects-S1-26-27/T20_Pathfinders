@@ -43,7 +43,8 @@ class Predictor:
         self._edge_group = [GROUP_OF_CLASS.get(c, "mild")
                             for c in traffic.road_classes]
         self.t0 = (pd.Timestamp(SIM_START)
-                   - pd.Timedelta(minutes=5 * GLOBAL_SHIFT_STEPS))
+                   - pd.Timedelta(minutes=5 * GLOBAL_SHIFT_STEPS)
+                   + pd.Timedelta(days=getattr(traffic, "day_offset", 0)))
         self.cache = OrderedDict()
         self.n_edges = traffic.mult.shape[0]
         self.hist_ratio = 1.0 / traffic.mult

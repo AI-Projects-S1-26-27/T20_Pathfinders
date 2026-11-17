@@ -31,6 +31,12 @@ def sensor_groups(train):
     return {"mild": order[:k], "medium": order[k:2 * k], "strong": order[2 * k:]}
 
 
+def weekday_offsets(n_days=23):
+    """Day offsets (0 = SIM_START) that fall on a weekday (Mon-Fri)."""
+    d0 = pd.Timestamp(SIM_START).dayofweek
+    return [d for d in range(n_days) if (d0 + d) % 7 < 5]
+
+
 class TrafficModel:
     def __init__(self, edges, road_classes, zone_of_edge, seed=42):
         self.edges = list(edges)
@@ -66,10 +72,15 @@ class TrafficModel:
         self.mult = np.clip(1.0 / ratios, 1.0, MAX_MULT).astype(np.float32)
 
     @classmethod
-    def from_graph(cls, path="data/processed/secunderabad.graphml", seed=42):
+    def from_graph(cls, path="data/processed/secunderabad.graphml", seed=42,
+                   day_offset=0):
+        """day_offset: start the clock on test-period day N (0 = default)."""
         edges, classes, zones = load_edge_table(path)
         m = cls(edges, classes, zones, seed)
         m.road_classes = classes
+        m.day_offset = int(day_offset)
+        if m.day_offset:
+            m.mult = np.roll(m.mult, -m.day_offset * 288, axis=1)
         return m
 
     def actual_multiplier(self, edge_idx, t_seconds):
