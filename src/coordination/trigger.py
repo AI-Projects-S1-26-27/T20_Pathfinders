@@ -111,7 +111,7 @@ class ThresholdTrigger(TriggerPolicy):
             if not v_conflicts:
                 return False
             return any(c.time_to_conflict(t) < self.tau for c in v_conflicts)
-
+            # D6: trigger when TTC < tau, including ongoing conflicts (TTC < 0).
         ttc = conflict.time_to_conflict(t)
         return ttc < self.tau
 
