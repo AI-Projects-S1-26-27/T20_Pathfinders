@@ -24,3 +24,5 @@ nodes_fake.csv
 __pycache__/
 .pytest_cache/
 logs/
+# sweep output (python -m src.sim.launcher): logs, done/ markers, results.csv
+runs/

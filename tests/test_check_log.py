@@ -109,3 +109,18 @@ def test_not_json_and_cli(tmp_path, capsys):
     assert main([str(tmp_path)]) == 1             # folder: both files, one bad
     out = capsys.readouterr().out
     assert "1/2 logs ok" in out
+
+
+def test_blank_lines_are_skipped(tmp_path):
+    """W6 review: a blank line at the end (or between rows) is harmless."""
+    lines = [json.dumps(r) for r in good_log()]
+    text = lines[0] + "\n\n" + "\n".join(lines[1:]) + "\n\n  \n"   # blank in the middle + end
+    path = tmp_path / "blank.jsonl"
+    path.write_text(text, encoding="utf-8")
+    assert check_file(str(path)) == ([], [])
+
+
+def test_empty_file_is_still_an_error(tmp_path):
+    path = tmp_path / "empty.jsonl"
+    path.write_text("\n\n", encoding="utf-8")
+    assert check_file(str(path))[0] == ["empty log"]
