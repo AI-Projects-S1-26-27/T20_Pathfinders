@@ -1,4 +1,4 @@
-"""Message schema and counter tracking for negotiation and allocation overhead evaluation."""
+"""Message schema and counters for negotiation and allocation overhead."""
 
 from dataclasses import dataclass
 from typing import Any, Dict

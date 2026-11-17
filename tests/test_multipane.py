@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 from src.viz import multipane  # noqa: E402
 from src.viz.multipane import (FLASH_S, LogMismatchError, Player, check_same_run,  # noqa: E402
                                flashes_at, message_counts_at, pane_counters)
-from src.viz.replay import state_at  # noqa: E402
+from src.viz.replay import messages_at, state_at  # noqa: E402
 
 START = 21600.0
 
@@ -84,6 +84,53 @@ def test_message_counts_none_when_not_logged():
     assert message_counts_at(base_log(), START + 1000) is None
     frame = multipane.compute_pane(base_log(), START + 50, CONFIG, small_graph())
     assert "messages: n/a (not logged)" in multipane.pane_hud_text("A", frame)
+
+
+def _centralized_log():
+    """Two R4 re-solves for 2 vehicles: 2 reports + 2 broadcasts each (CentralResult
+    .messages = 2 x vehicles), plus allocation_complete, which must not be re-counted."""
+    log = base_log(mode="centralized")
+    for t in (0, 200):
+        for vid in ("V1", "V2"):
+            log.append(ev(t, "central_state_report", {"sender": vid}, vid, mode="centralized"))
+        for vid in ("V1", "V2"):
+            log.append(ev(t, "central_plan_broadcast", {"recipient": vid, "order_ids": []},
+                          vid, mode="centralized"))
+        log.append(ev(t, "allocation_complete", {"cpu_seconds": 0.1, "messages": 4,
+                                                 "mode": "centralized"}, mode="centralized"))
+    return sorted(log, key=lambda e: e["t"])
+
+
+def test_message_counts_centralized_rows():
+    log = _centralized_log()
+    assert message_counts_at(log, START + 100) == {"central": 4, "total": 4}
+    assert message_counts_at(log, START + 200) == {"central": 8, "total": 8}
+    frame = multipane.compute_pane(log, START + 200, CONFIG, small_graph())
+    hud = multipane.pane_hud_text("centralized", frame)
+    assert "messages: 8 (central 8)" in hud
+    assert "n/a" not in hud.split("messages:")[1].splitlines()[0]
+
+
+@pytest.mark.parametrize("kind", ["centralized", "full", "mixed"])
+def test_message_counts_equal_replay_messages_at(kind):
+    if kind == "centralized":
+        log = _centralized_log()
+    elif kind == "full":
+        log = base_log(mode="full") + [
+            ev(10, "allocation", {"phase": "bid"}, "V1", mode="full"),
+            ev(20, "negotiation_request", {"count": 1, "edge": [1, 2, 0]}, "V1", mode="full"),
+            ev(20, "negotiation_response", {"count": 1, "edge": [1, 2, 0]}, "V2", mode="full"),
+            ev(20, "negotiation_result", {"count": 2, "edge": [1, 2, 0]}, mode="full"),
+        ]
+    else:                    # not a real mode: every group at once
+        log = _centralized_log() + [ev(150, "negotiation_result", {"count": 3})]
+    for t in (START - 1, START, START + 15, START + 20, START + 150, START + 500):
+        mp, rp = message_counts_at(log, t), messages_at(log, t)
+        assert mp["total"] == rp["total"]
+        assert mp.get("central", 0) == rp.get("central", 0)
+        assert mp.get("allocation", 0) == rp.get("allocation", 0)
+        assert sum(mp.get(k, 0) for k in multipane.MESSAGE_TYPES[1:]) == rp.get("negotiation", 0)
+    assert message_counts_at(base_log(), START + 500) is None is messages_at(base_log(), START)
 
 
 # --- negotiation flashes ---------------------------------------------------
