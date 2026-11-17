@@ -1,0 +1,10 @@
+# R3 Week 7 audit pilot: the 9 seed-0 scenarios, the two decentralized modes, two run seeds,
+# 10 disruptions/hour. Not the main sweep (R1/R8 own that); run the audit on it the same way.
+# Centralized is left out: one centralized run on a large scenario took ~23 min for 11 of 240
+# simulated minutes (R1, Week 5), too slow for a pilot.
+sweep_id: r3_audit_pilot
+configs: [configs/scenarios/*_s0.yaml]
+modes: [independent, full]
+seeds: [9001, 9002]
+rates: [10.0]
+workers: 2
