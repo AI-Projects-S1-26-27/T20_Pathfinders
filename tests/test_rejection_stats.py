@@ -130,3 +130,30 @@ def test_distinct_closures_are_counted_once_per_seed():
           {"scenario": "small_uniform_s1", "closures": 1, "closure_ids": ["1-2"],
            "changed_closure_ids": []}]
     assert _distinct_closures(b2) == (3, 2)   # seed 0: two closures, both hit; seed 1: one, none
+
+
+def test_stand_in_driver_keeps_its_hand_written_routes():
+    """Part B2 runs scripts/run_audit_demo.py's stand-in driver. Since R1's #38 the simulator
+    defaults to contract-net, which ignores hand-written routes, so the driver must ask for the
+    "route" allocation (without it B2 silently measured a different system)."""
+    import importlib.util
+    from pathlib import Path
+
+    import networkx as nx
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location("demo", root / "scripts" / "run_audit_demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    G = nx.MultiDiGraph()
+    for u, v in ((0, 1), (1, 2), (2, 0)):
+        G.add_edge(u, v, key=0, free_flow_time=10.0)
+    cfg = {
+        "vehicles": [{"id": "V", "depot_node": 0, "current_node": 0, "capacity": 5.0}],
+        "orders": [{"id": "a", "node": 2, "demand": 1.0, "service_time": 60.0,
+                    "release_time": T}],
+    }
+    out = demo.drive_routes(cfg, G)
+    assert out["allocation"] == "route"
+    assert out["vehicles"][0]["route"] == [0, 1, 2, 0]
+    assert "allocation" not in cfg  # the committed scenario is not changed

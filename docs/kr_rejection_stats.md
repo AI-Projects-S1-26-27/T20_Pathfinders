@@ -43,7 +43,7 @@ Two things to state next to the table:
   data, not as evidence that KR-8 is unnecessary: the rule tests show it working on tight windows.
 - **KR-10 rarely binds at a 10:00 shift end.** With every vehicle due back by 10:00, the end of the simulated
   period, KR-10 blocks 4 of 30,000 checks. An earlier shift end was not tested; it is a tighter limit, so it
-  would block at least as many. A shift end in the scenarios would also let the audit check KR-10 (see
+  would be expected to block at least as many. A shift end in the scenarios would also let the audit check KR-10 (see
   `docs/kr_audit.md`, "Not checked").
 - **KR-3 is why the fleet is small-only.** A large vehicle could not reach 72% of the order locations,
   because 81.3% of Secunderabad's directed roads (4,922 of 6,056) are closed to them: residential,

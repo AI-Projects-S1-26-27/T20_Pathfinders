@@ -50,6 +50,9 @@ def drive_routes(cfg: dict, G) -> dict:
             if a != b:
                 route += nx.shortest_path(G, a, b, weight="free_flow_time")[1:]
         v["route"] = route
+    # Since R1's #38 the simulator defaults to R4's contract-net, which ignores hand-written
+    # routes; the stand-in driver needs W4's "route" allocation to drive the routes above.
+    cfg["allocation"] = "route"
     return cfg
 
 

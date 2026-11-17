@@ -410,8 +410,8 @@ def report(res: dict) -> str:
             "",
             "The committed scenarios set no shift end (KR-10 cannot bind there). This run adds "
             f"one at {hh:02d}:00, the end of the simulated period, to show what KR-10 would do. "
-            "Only this one shift end was tested; an earlier one is a tighter limit and would "
-            "block at least as many checks.",
+            "Only this one shift end was tested; an earlier one is a tighter limit and would be "
+            "expected to block at least as many checks.",
             "",
         ]
         out += _rule_table(res["part_a_shift_end"])
