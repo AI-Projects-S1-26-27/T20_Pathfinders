@@ -169,6 +169,8 @@ def read_rows(path: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     rows, errors = [], []
     with open(path, encoding="utf-8") as f:
         for i, line in enumerate(f, 1):
+            if not line.strip():      # a blank line (e.g. at the end) is not an error
+                continue
             try:
                 rows.append(json.loads(line))
             except ValueError:
