@@ -9,7 +9,7 @@ A sweep file names the grid; every combination is one run:
     sweep_id: pilot
     configs: [configs/scenarios/large_*_s0.yaml]   # paths or globs (R1 config format)
     modes: [centralized, independent, full]
-    seeds: [9001, 9002, 9003]          # each run's `seed` (world, disruptions, R6 noise)
+    seeds: [101, 102, 103]             # each run's `seed`; not pilot seeds 7-9 / 9001-9005
     rates: [5.0, 10.0]                 # optional: disruption_rate_per_hour
     predictor: [true, false]           # optional: R6 forecast on / off
     overrides: {duration_seconds: 14400.0}   # optional: applied to every config

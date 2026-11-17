@@ -75,7 +75,7 @@ configs x modes x seeds (x rates x predictor) in parallel worker processes:
 sweep_id: pilot
 configs: [configs/scenarios/large_*_s0.yaml]   # paths or globs
 modes: [centralized, independent, full]
-seeds: [9001, 9002, 9003]
+seeds: [101, 102, 103]      # not pilot seeds: 7-9 (R7's hysteresis pilot), 9001-9005 (R6's ablation)
 rates: [5.0, 10.0]          # optional: disruption_rate_per_hour
 predictor: [true, false]    # optional: R6 forecast on/off
 overrides: {}               # optional: applied to every config
@@ -83,7 +83,7 @@ workers: 4                  # optional, default CPUs - 1
 ```
 
 - **Seed-controlled**: a run is fully set by its config + seed (`run_id` like
-  `large_uniform_s0__full__r10__s9001`), never by which worker ran it.
+  `large_uniform_s0__full__r10__s101`), never by which worker ran it.
 - **Resumable**: a finished run writes `done/<run_id>.json` (summary + config hash) and is skipped
   next launch; edit its config and it reruns. Logs are written as `.jsonl.part` and renamed only on
   success. A crash writes `failed/<run_id>.txt` and is retried on the next launch.
@@ -119,6 +119,11 @@ are), and through the launcher's `results.csv`. Checked by hand as well, same ha
 from the run's seeded generator (`env.rng`, or a `random.Random(seed)` of your own), never from
 `random` / `np.random` module functions, and do not let the order of a `set` decide anything.
 
+**Not covered: R6's predictor.** Every test and hand run above used free-flow times (no METR-LA
+data or torch on the machines used), so runs with the traffic model / predictor on are not shown
+to be deterministic yet. To check (R6, with the real data): run one config with `predictor: true`
+twice and compare the logs without timing keys.
+
 **Log checker**: is a log complete and consistent?
 
 ```bash
@@ -134,6 +139,21 @@ with an unknown reason; `sim_complete` counts not matching the rows; a vehicle e
 before leaving the last one; with `--config`, a released order that never ended. Event names not
 in `docs/log_schema.md` are only warnings. The launcher runs it on every finished run: column
 `log_errors` in `results.csv` (details in `done/<run_id>.json`), and lists flagged runs at the end.
+
+## Known open issues (W7)
+
+Bug triage list for the final week: what is known not to work, or is not done, and whose it is.
+
+| # | issue | effect | owner |
+|---|-------|--------|-------|
+| 1 | `new_order` disruption events (D11) only announce `dyn_N`: no node, no order is created (`TODO(R3)` in `events.py`; R3's `generate_order(rng, t)` is ready, `TODO(R1)` in `src/data/orders_from_amazon.py`) | 30% of disruption events change nothing; dynamic orders in runs come only from the scenario's `release_time`s | R1 + R3 |
+| 2 | Centralized mode re-solves (OR-Tools, 2 s limit per solve) on every event | ~1.5-2 min for viz_demo at 10/h; > 20 min at 20 vehicles (profile above), too slow for a full sweep | R4 (cap or batch re-solves?) |
+| 3 | R4's `allocation_summary` is logged after `sim_complete` (could use `env.add_finisher`) | allowed as an exception in `check_log.py` | R4 |
+| 4 | R4's `central_state_report` / `central_plan_broadcast` events are not in `docs/log_schema.md` | `check_log` warns | R4 |
+| 5 | No depot unloading: load never decreases (`TODO(R4/R5)` in `environment.py`) | an order blocked by capacity can never be served later | R4/R5 (scope decision) |
+| 6 | R3's `RoadRules` (KR-3/4/6) are not built in `run.py`; `kr_check` rows not in the schema (`TODO(R1)` in `src/kr/planner_rules.py`) | road-class / zone rules are not applied in simulated runs | R1 + R3 |
+| 7 | `AgentPlanner.set_stops`: with `unreachable="wait"` the vehicle keeps its old route until the next disruption; unknown vehicle id raises a bare `KeyError` (W5 review) | none with the defaults (contract-net uses `fail`) | R7 |
+| 8 | R6's clock convention not confirmed (`TODO(R6)` in `world.py`); predictor-on determinism not checked (above) | only matters with R6's data | R6 |
 
 ## Files
 
@@ -244,7 +264,8 @@ Prints a `cProfile` table sorted by cumulative time.
   on `drop_stops`) so contract-net awards can change a running vehicle's stops; please review.
 - **R6 (traffic)**: `World.from_defaults` loads `TrafficModel` + `Predictor` when
   available; `TODO(R6)` in `world.py` to confirm the clock convention.
-- **R7 (triggers / re-routing)**: subscribe to `disruption` events; vehicles currently
-  wait at closures (`TODO(R7)`); use `world.cost_fn_at(t)` to re-plan.
+- **R7 (triggers / re-routing)**: R7's `AgentPlanner` subscribes to `disruption` events and
+  replans; a vehicle waiting at a closed road follows the new route as soon as the planner
+  replaces it (W5; the old "wait at closures" `TODO(R7)` is done).
 - **R8 (metrics)**: read the JSONL log, schema in `docs/log_schema.md`
   (new env event `closure_skipped`).
