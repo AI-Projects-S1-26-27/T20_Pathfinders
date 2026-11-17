@@ -31,8 +31,11 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT = ["small_clustered_s0", "medium_hotspot_s3"]
 
 
-def drive_routes(cfg: dict, G) -> dict:
-    """The stand-in driver: returns cfg with every vehicle's route filled in (cfg is copied)."""
+def drive_routes(cfg: dict, G, allocation="route") -> dict:
+    """The stand-in driver: returns cfg with every vehicle's route filled in (cfg is copied).
+
+    allocation is written into cfg; None leaves it out, so the simulator uses its default
+    (R4's contract-net since R1's #38), which ignores the routes filled in here."""
     import networkx as nx
 
     from src.sim.run import build_order
@@ -50,10 +53,15 @@ def drive_routes(cfg: dict, G) -> dict:
             if a != b:
                 route += nx.shortest_path(G, a, b, weight="free_flow_time")[1:]
         v["route"] = route
+    # Since R1's #38 the simulator defaults to R4's contract-net, which ignores hand-written
+    # routes; the stand-in driver needs W4's "route" allocation to drive the routes above.
+    if allocation is not None:
+        cfg["allocation"] = allocation
     return cfg
 
 
-def run_one(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
+def run_one(name: str, rate: float, log_dir: Path, graphs: dict, allocation="route") -> dict:
+    """allocation: see drive_routes; "route" (the default) drives the stand-in routes."""
     import yaml
 
     from src.kr.audit import audit_log, load_graph_for, read_log
@@ -64,10 +72,11 @@ def run_one(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
     if scenario["map_path"] not in graphs:
         graphs[scenario["map_path"]] = load_graph_for(scenario)
     G = graphs[scenario["map_path"]]
-    cfg = drive_routes(scenario, G)
+    cfg = drive_routes(scenario, G, allocation)
     cfg["disruption_rate_per_hour"] = rate
     log_dir.mkdir(parents=True, exist_ok=True)
-    cfg["log_path"] = str(log_dir / f"{name}.jsonl")
+    suffix = "" if allocation == "route" else f"__{allocation or 'default'}"
+    cfg["log_path"] = str(log_dir / f"{name}{suffix}.jsonl")
     rows = read_log(run_from_config(cfg))
     events = Counter(r["event"] for r in rows)
     rep = audit_log(rows, scenario, G)  # audited against the committed, unmodified file
