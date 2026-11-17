@@ -253,4 +253,3 @@ def test_service_row_is_the_column_the_generator_uses():
     out = fill.fill(both, summary, "x", per_stop=True).splitlines()
     assert out == [row + " 1 | 2 | 3 | 4 | 5 | 3 |",
                    "| Service time, sum over a stop's packages (s) | 10 | 20 | 30 | 40 | 50 | 30 |"]
-    

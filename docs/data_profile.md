@@ -52,7 +52,7 @@ Fields **ignored on purpose**: lat/lng (obfuscated, no geography transfers), zon
 | Packages per stop | 1.0 | 1.0 | 1.0 | 2.0 | 4.0 | 1.6 |
 | Package volume (cm³) | 855 | 2,963 | 5,742 | 13,297 | 42,853 | 11,078 |
 | Time-window width (h) | 4.00 | 7.00 | 8.00 | 8.50 | 23.98 | 9.00 |
-| Service time per stop (s) | – | – | – | – | – | – |
+| Service time per stop (s) | 24 | 40 | 56 | 83 | 183 | 74 |
 | Service time, sum over a stop's packages (s) | 30 | 49 | 73 | 126 | 303 | 111 |
 | Capacity utilization | 49.9% | 63.0% | 73.7% | 85.5% | 97.8% | 74.0% |
 

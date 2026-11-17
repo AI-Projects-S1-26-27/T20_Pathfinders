@@ -38,5 +38,27 @@
   "released_during_run": 0.28733333333333333,
   "orders_unservable_alone": 0
  },
- "amazon": null
+ "amazon": {
+  "routes": 6112,
+  "share_with_tw": 0.0659,
+  "tw_width_h": {
+   "0.05": 4.0,
+   "0.25": 7.0,
+   "0.5": 8.0,
+   "0.75": 8.5,
+   "0.95": 23.983,
+   "mean": 8.997,
+   "n": 113993
+  },
+  "service_time_s": {
+   "0.05": 23.5,
+   "0.25": 40.0,
+   "0.5": 56.0,
+   "0.75": 83.0,
+   "0.95": 183.0,
+   "mean": 74.18,
+   "n": 898415
+  },
+  "service_column": "service_time_per_stop_s(max)"
+ }
 }

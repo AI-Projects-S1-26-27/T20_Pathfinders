@@ -125,20 +125,29 @@ KR-13-KR-15). KR-3 cannot fail with a small-only fleet, and there are no zones f
 runs log deliveries without `node`/`demand`, so for them NODE is checked by the vehicle's position.
 
 **T1b. How often rules block** (`reports/rule_rejections.md`, 9 seed-0 scenarios: 1,800 orders,
-30,000 order-vehicle checks):
+30,000 order-vehicle checks; the two-allocation B2 result is from PR #46). The insertion and
+large-vehicle rows are stand-alone measurements of the rules, not of the system the experiments run.
+The closure row gives both.
 
 | What is blocked | Rule | How often |
 |---|---|---|
-| Insertion of an order into a vehicle | KR-1 capacity | 28.1% of checks; all 8,435 rejections |
+| Insertion of an order into a vehicle, in a stand-alone greedy allocation | KR-1 capacity | 28.1% of checks; all 8,435 rejections |
 | | KR-8 time window | 0 |
 | | KR-10 back by shift end | 0 as committed; 4 checks if every vehicle is due back by 10:00 (only shift end tested) |
 | Order no vehicle can take | KR-15 | 0 of 1,800 |
-| Road for a large vehicle | KR-3 | 81.3% of roads closed to them; 72.2% of depot-to-order trips impossible; detoured trips 27.6% longer |
-| Road during the run | KR-4 closure | 3 of 7 distinct closures changed a route (13 of 63 closure-scenario pairs); 0 vehicles stuck |
+| Road for a large vehicle, from 3 hypothetical depots | KR-3 | 81.3% of roads closed to them (4,922 of 6,056; 4,800 of them residential); 1,299 of 1,800 (order node, depot) trips impossible (600 order nodes x 3 depots); detoured trips 27.6% longer |
+| Road during the run | KR-4 closure | Contract-net, the allocation the experiments use: 0 of 7 distinct closures changed a route (0 of 63 closure-scenario pairs, no route check triggered). Stand-in hand-written routes: 3 of 7 (13 of 63 pairs). Both: 0 vehicles stuck, 0 audit violations |
 
-Notes to keep next to T1b: KR-1's 100% depends on fleet capacity being sized so that demand is 80% of
-it, and on the greedy planning-time assignment. The closure counts come from a stand-in driver, not
-R4's allocation.
+Notes to keep next to T1b:
+- The insertion rows come from a stand-alone greedy allocation at planning time (least extra time, in
+  release order), not from R4's contract-net, which uses its own capacity checks; R3's rules are not
+  called in the experiment runs. That KR-1 is the only rule that blocks follows from the scenarios:
+  fleet capacity is sized so demand is 80% of it, and every order is loaded at 06:00 with no unloading.
+- A large-vehicle trip is an (order node, hypothetical depot) pair, not an order; that there are also
+  1,800 orders is a coincidence. Most trips are impossible because of the rule and the map together.
+- In our runs, closures did not force reroutes: with contract-net no closure lay on a vehicle's
+  remaining route. With the stand-in's routes, fixed in advance, the same closures did force
+  reroutes. With 7 closures from one seed, neither is a rate.
 
 **Supporting numbers for the text** (`docs/csp_pruning.md`, 30 seeds; `docs/heuristic_gap.md`):
 - 12 orders x 4 vehicles. Mean nodes: plain backtracking 46,342 (11 of 30 hit the 100,000-node limit),
@@ -152,7 +161,7 @@ R4's allocation.
 
 - Demand is US 2018 statistics; Hyderabad demand may differ, and only statistics transfer.
 - Priorities, release times and the 80% capacity sizing are our assumptions. The rejection split
-  depends on them.
+  depends on them, and it is measured on a stand-alone allocation, not on R4's.
 - Generated windows are clipped to 4 hours, so KR-8 almost never binds. This is a property of the
   data and the period, not evidence that the rule is unnecessary.
 - The fleet is small-only, so KR-3 is measured as a hypothetical (B1) and cannot fail in the audit.
