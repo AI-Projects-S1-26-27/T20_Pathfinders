@@ -26,6 +26,8 @@ ROWS = [  # (label in the doc, key in summary.json, scale, decimals)
     ("Package volume (cm³)", "package_volume_cm3", 1, 0),
     ("Time-window width (h)", "tw_width_h", 1, 2),
     ("Service time per stop (s)", SERVICE_KEY, 1, 0),  # sum or max: see service_key()
+    # kept for comparison only: counts a stop's time once per package when it is repeated
+    ("Service time, sum over a stop's packages (s)", "service_time_per_stop_s(sum)", 1, 0),
     ("Capacity utilization", "capacity_utilization", 100, 1),  # shown in %
 ]
 QUANTILES = ["0.05", "0.25", "0.5", "0.75", "0.95", "mean"]

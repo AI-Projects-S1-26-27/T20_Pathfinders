@@ -4,17 +4,17 @@ Every number below comes from a committed, script-generated file, named in brack
 and update the number if the file changes. Sections follow the report outline (guide 9.1): a course
 concepts row, related work, the Data subsection, Method, Results (table T1) and Limitations.
 
-Two inputs are not on main yet: `reports/rule_rejections.md` (Week 6 PR) and the main sweep (R1/R8).
-The audit numbers here are from the pilot sweep. Replace them with `reports/audit_sweep.md` once the
-main sweep has run.
+The main sweep (R1/R8) has not run yet, so the audit numbers here are from the pilot sweep. Replace
+them with `reports/audit_sweep.md` once the main sweep has run. `reports/rule_rejections.md` is on
+main.
 
 ---
 
 ## Course concepts (one row of the table)
 
-| Concept | Where in the system | What it decides |
+| Concept | Where in the system | What it does in the experiments |
 |---|---|---|
-| KR&R: production rules with forward chaining; CSP with backtracking, MRV, forward checking, AC-3/MAC | `src/kr/engine.py`, `rules.py`, `csp.py` (R3) | Whether a vehicle may take a set of orders (capacity, release, time windows, shift), which roads a vehicle may use, and in what order its stops go |
+| KR&R: production rules with forward chaining; CSP with backtracking, MRV, forward checking, AC-3/MAC | `src/kr/engine.py`, `rules.py`, `csp.py` (R3) | A tested library. In the final runs it does not make decisions: R4's allocation and R7's planner use their own checks. It is used as an independent audit of every run's log (`src/kr/audit.py`, table T1a), for the rule-rejection statistics (T1b), and by the scenario generator to check that every order can be served by some vehicle |
 
 ## Related work (KR&R and data; about four sentences)
 
@@ -24,8 +24,8 @@ with the fail-first (MRV) ordering and forward checking of Haralick and Elliott 
 consistency (AC-3) from Mackworth (1977), both at the root and maintained during search (MAC). Demand
 statistics come from the Amazon Last Mile Routing Research Challenge data set (Merchán et al., 2022/2024),
 9,184 real routes from five US metro areas in 2018 with obfuscated locations. These are standard
-techniques. Our contribution here is not a new reasoning method, but explicit, tested rules that make
-every feasibility decision explainable and every logged run auditable.
+techniques. Our contribution here is not a new reasoning method, but explicit, tested rules against which
+every logged run is audited.
 
 References (each opened, Nov 2026):
 - Haralick, R. M., & Elliott, G. L. (1980). Increasing tree search efficiency for constraint
@@ -100,10 +100,9 @@ heuristic is used.
 
 **Integration.** `road_allowed` and closures become blocked edges in R2's and R7's searches
 (`planner_rules.RoadRules`), priorities order the stops (`priority_stops`), and `kr_check` rows go to
-the log (`docs/kr_planner_integration.md`). Say which of these the final runs actually call. In the
-pilot sweep, R4's allocation (contract-net and OR-Tools) used its own feasibility checks and R7's
-planner got closures from R1's world, so the audit below is an independent check of the outcome, not
-a test of R3's engine.
+the log (`docs/kr_planner_integration.md`). The final runs call none of these: R4's allocation
+(contract-net and OR-Tools) uses its own feasibility checks, and R7's planner gets closures from R1's
+world. So the audit below is an independent check of the outcome, not a test of R3's engine.
 
 **Verification.** Every rule has a positive and a negative unit test (`tests/test_rule_coverage.py`).
 The CSP equals brute force on random small instances and agrees with python-constraint. AC-3 never

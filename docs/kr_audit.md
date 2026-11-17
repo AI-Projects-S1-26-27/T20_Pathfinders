@@ -105,7 +105,11 @@ flagged, so a zero comes from checks that fire on that mode's log format.
 
 A delivery row without the `node` or `demand` field that `docs/log_schema.md` requires is reported
 as a log-schema gap, not as a violation. NODE is then checked by the vehicle's position, and KR-1 by
-the demand in the scenario file.
+the demand in the scenario file. Schema gaps do not change the exit code. That is right for R4's
+centralized logs, where the vehicle was at the order's node every time, but it would also let the
+same defect pass silently if a decentralized log ever lost the field. So read the "Log-schema gaps"
+section of the report, which lists the modes each gap occurs in: any gap outside centralized mode is
+new and should be reported to the log's owner.
 
 ### Pilot result (`reports/audit_sweep_pilot.md`)
 

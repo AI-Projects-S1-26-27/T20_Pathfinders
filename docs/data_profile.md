@@ -52,12 +52,19 @@ Fields **ignored on purpose**: lat/lng (obfuscated, no geography transfers), zon
 | Packages per stop | 1.0 | 1.0 | 1.0 | 2.0 | 4.0 | 1.6 |
 | Package volume (cm³) | 855 | 2,963 | 5,742 | 13,297 | 42,853 | 11,078 |
 | Time-window width (h) | 4.00 | 7.00 | 8.00 | 8.50 | 23.98 | 9.00 |
-| Service time per stop (s) | 30 | 49 | 73 | 126 | 303 | 111 |
+| Service time per stop (s) | – | – | – | – | – | – |
+| Service time, sum over a stop's packages (s) | 30 | 49 | 73 | 126 | 303 | 111 |
 | Capacity utilization | 49.9% | 63.0% | 73.7% | 85.5% | 97.8% | 74.0% |
 
 - Share of packages with a time window: 7.8 %
 - Share of stops with at least one windowed package: 6.6 %
 - Is service time per package or repeated per stop? repeated per stop: at 98.6% of stops with several packages every package has the same value, so it is one stop-level time; the generator uses the per-stop value (`service_max_s`), not the sum
+
+The per-stop row is the value the generator samples (`service_max_s`). Until Week 7 that row showed
+the sum over a stop's packages (median 73 s), which counts one stop-level time once per package; those
+numbers are now in the row below it. If the per-stop row shows dashes, it has not been refilled yet:
+run `python scripts/fill_data_profile.py` with the local profile (`data/profile/`). Generated orders
+have a median service time of 55.5 s (`reports/scenario_stats.md`).
 
 Plots: `stops_per_route.png`, `packages_per_stop.png`, `package_volume.png`, `tw_width.png`, `service_time.png`.
 
