@@ -3,7 +3,12 @@
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from src.coordination.conflict import Conflict, VehicleRoute, detect_conflicts, prepare_occupancies
+from src.coordination.conflict import (
+    Conflict,
+    VehicleRoute,
+    detect_conflicts,
+    prepare_occupancies,
+)
 
 Edge = Tuple[str, str]
 
@@ -50,7 +55,9 @@ class AlwaysTrigger(TriggerPolicy):
         edge_capacities: Optional[Dict[Edge, int]] = None,
     ):
         self.delta_t = delta_t
-        self.edge_capacities = edge_capacities if edge_capacities is not None else {}
+        self.edge_capacities = (
+            edge_capacities if edge_capacities is not None else {}
+        )
 
     def should_negotiate(
         self,
@@ -71,7 +78,7 @@ class AlwaysTrigger(TriggerPolicy):
 
 
 class ThresholdTrigger(TriggerPolicy):
-    """Proposed system: negotiates iff TTC < tau (including negative TTC for ongoing conflicts)."""
+    """Negotiate iff TTC < tau, including negative TTC during conflicts."""
     def __init__(
         self,
         tau: float,
@@ -80,7 +87,9 @@ class ThresholdTrigger(TriggerPolicy):
     ):
         self.tau = tau
         self.delta_t = delta_t
-        self.edge_capacities = edge_capacities if edge_capacities is not None else {}
+        self.edge_capacities = (
+            edge_capacities if edge_capacities is not None else {}
+        )
 
     def should_negotiate(
         self,
@@ -96,7 +105,9 @@ class ThresholdTrigger(TriggerPolicy):
                 edge_capacities=self.edge_capacities,
                 delta_t=self.delta_t,
             )
-            v_conflicts = [c for c in conflicts if vehicle.vehicle_id in c.vehicles]
+            v_conflicts = [
+                c for c in conflicts if vehicle.vehicle_id in c.vehicles
+            ]
             if not v_conflicts:
                 return False
             return any(c.time_to_conflict(t) < self.tau for c in v_conflicts)
@@ -111,7 +122,7 @@ def filter_and_trigger_conflicts(
     routes_dict: Dict[str, VehicleRoute],
     t_now: float,
 ) -> List[ConflictTriggerEvent]:
-    """Generate negotiation trigger events for conflicts satisfying the policy."""
+    """Generate trigger events for conflicts satisfying the policy."""
     events: List[ConflictTriggerEvent] = []
     for c in conflicts:
         ttc = c.time_to_conflict(t_now)

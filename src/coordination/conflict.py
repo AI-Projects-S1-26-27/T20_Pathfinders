@@ -1,4 +1,6 @@
-"""Conflict Detection Module: Translates routes to occupancies and sweeps for capacity overloads."""
+"""Conflict detection by translating routes to occupancies and sweeping
+for capacity overloads.
+"""
 
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -53,7 +55,10 @@ def get_edge_time(times: Dict[Edge, float], u: Node, v: Node) -> float:
 
 
 def prepare_occupancies(routes: Iterable[VehicleRoute]) -> List[RoadOccupancy]:
-    """Convert vehicle routes into timed edge-occupancy intervals [planned_enter, planned_exit]."""
+    """Convert routes into timed edge-occupancy intervals.
+
+    Intervals are [planned_enter, planned_exit].
+    """
     occupancies: List[RoadOccupancy] = []
     seen_ids: Set[str] = set()
 
@@ -93,10 +98,14 @@ def _validate_detection_inputs(
         raise ValueError("delta_t cannot be negative")
     for edge, cap in edge_capacities.items():
         if cap < 1:
-            raise ValueError(f"Edge capacity for {edge} must be >= 1, got {cap}")
+            raise ValueError(
+                f"Edge capacity for {edge} must be >= 1, got {cap}"
+            )
 
 
-def _effective_clash_window(occ: RoadOccupancy, delta_t: float) -> Tuple[float, float]:
+def _effective_clash_window(
+    occ: RoadOccupancy, delta_t: float
+) -> Tuple[float, float]:
     """
     D6 Arrival-Gap Rule + Physical Occupancy:
     Two vehicles using the same edge clash if their physical occupancies
@@ -112,7 +121,7 @@ def detect_conflicts(
     edge_capacities: Optional[Dict[Edge, int]] = None,
     delta_t: float = 0.0,
 ) -> List[Conflict]:
-    """Sweeps over entry/exit events to detect capacity overloads on directed edges."""
+    """Sweep entry/exit events to detect directed-edge capacity overloads."""
     caps = edge_capacities if edge_capacities is not None else {}
     _validate_detection_inputs(caps, delta_t)
 
@@ -133,7 +142,7 @@ def detect_conflicts(
             events.append((start_t, "ENTRY", u))
             events.append((end_t, "EXIT", u))
 
-        # Sort by timestamp ascending; within identical timestamps, process EXIT before ENTRY
+        # Sort by timestamp, processing EXIT before ENTRY on ties.
         events.sort(key=lambda x: (x[0], 0 if x[1] == "EXIT" else 1))
 
         active_occupancies: Set[RoadOccupancy] = set()
@@ -169,7 +178,9 @@ def detect_conflicts(
             elif in_overload:
                 in_overload = False
                 if t > overload_start:
-                    earliest = min(o.entry_time for o in accumulated_occupancies)
+                    earliest = min(
+                        o.entry_time for o in accumulated_occupancies
+                    )
                     conflicts.append(
                         Conflict(
                             edge=edge,
@@ -182,7 +193,10 @@ def detect_conflicts(
                 accumulated_vehicles = set()
                 accumulated_occupancies = []
 
-    return sorted(conflicts, key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)))
+    return sorted(
+        conflicts,
+        key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)),
+    )
 
 
 def verify_conflicts_brute_force(
@@ -190,7 +204,7 @@ def verify_conflicts_brute_force(
     edge_capacities: Optional[Dict[Edge, int]] = None,
     delta_t: float = 0.0,
 ) -> List[Conflict]:
-    """Brute-force checker that counts active vehicles at every interval boundary."""
+    """Brute-force checker counting active vehicles at interval boundaries."""
     caps = edge_capacities if edge_capacities is not None else {}
     _validate_detection_inputs(caps, delta_t)
 
@@ -263,4 +277,7 @@ def verify_conflicts_brute_force(
                 )
             )
 
-    return sorted(conflicts, key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)))
+    return sorted(
+        conflicts,
+        key=lambda c: (c.overlap_start, c.edge, sorted(c.vehicles)),
+    )
