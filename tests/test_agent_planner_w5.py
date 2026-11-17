@@ -462,3 +462,85 @@ def test_independent_wait_mode_does_not_need_r1_internals(tmp_path):
     for hidden in ("_pending", "_fail"):
         env = _EnvWithout(make_env(FakeWorld(grid_graph()), tmp_path), hidden)
         assert AgentPlanner(env, mode="independent", unreachable="wait").mode == "independent"
+
+
+# ---------------------------------------------------------------------------
+# W7 fix: a stop cut off only from the stop before it is reordered, not dropped
+# ---------------------------------------------------------------------------
+def pocket_world():
+    """0 <-> 2 (100 m each way); 0 -> 1 and 1 -> 0 (a dead-end pocket at 1)."""
+    G = nx.MultiDiGraph()
+    for u, v in [(0, 2), (2, 0), (0, 1), (1, 0)]:
+        G.add_edge(u, v, key=0, length=100.0)
+    return FakeWorld(G)
+
+
+def test_stop_cut_off_only_in_planned_order_is_reordered_not_dropped():
+    world = pocket_world()
+    veh = Vehicle("V1", 0, 10.0, current_node=0)
+    agent = ReplanningAgent(veh, world, [1, 2], START)      # visit the pocket first
+    world.add_disruption(1, 0, 0, FAR, start_t_seconds=START)   # the pocket's exit closes
+    route = agent.on_world_change([(1, 0)], START)
+    assert route.nodes == [] and agent.unreachable_stops == [2]  # 2 cut off after 1 only
+    route = agent.drop_stops(agent.unreachable_stops, START)
+    assert agent.dropped == [] and agent.reordered
+    assert route.nodes == [0, 2, 0, 1]                        # 2 first, then the pocket
+    assert agent.remaining_stops == [2, 1]
+
+
+def test_stop_truly_cut_off_is_still_dropped():
+    world = pocket_world()
+    veh = Vehicle("V1", 0, 10.0, current_node=0)
+    agent = ReplanningAgent(veh, world, [1, 2], START)
+    world.add_disruption(0, 1, 0, FAR, start_t_seconds=START)   # no way into the pocket
+    route = agent.on_world_change([(0, 1)], START)
+    assert route.nodes == []
+    route = agent.drop_stops(agent.unreachable_stops, START)
+    assert agent.dropped == [1] and route.nodes == [0, 2]
+
+
+def test_vehicle_already_driving_into_the_pocket_drops_the_other_stop(tmp_path):
+    """The exit closes while V1 drives 0 -> 1: it cannot turn back, so from the end
+    of that road stop 2 really is unreachable; it is dropped and o2 failed."""
+    world = pocket_world()
+    env = make_env(world, tmp_path)
+    planner = AgentPlanner(env)
+    veh = Vehicle("V1", 0, 10.0, current_node=0)
+    o1 = Order("o1", 1, 1.0, service_time=0.0)
+    o2 = Order("o2", 2, 1.0, service_time=0.0)
+    planner.register(veh, [o1, o2], stops=[1, 2])
+    env.add_vehicle(veh, [o1, o2])
+    disrupt_at(env, 1, 0, 2)                                  # while V1 drives 0 -> 1
+    env.run(500)
+    su = rows(env, "stop_unreachable")
+    assert su and su[0]["payload"]["stops"] == [2] and su[0]["payload"]["failed"] == ["o2"]
+    assert [r["payload"]["order_id"] for r in rows(env, "order_delivered")] == ["o1"]
+
+
+def test_real_scenario_that_crashed_the_simulator(tmp_path):
+    """medium_clustered seed 9 at 20 disruptions/h with no hysteresis: Weeks 5-6
+    dropped ~115 reachable stops after one cut-off stop, including the order the
+    vehicle was serving, and R1's environment crashed (list.remove)."""
+    import os
+    import yaml
+    from src.sim.run import run_from_config
+    path = os.path.join("configs", "scenarios", "medium_clustered_s9.yaml")
+    if not os.path.exists(path):
+        pytest.skip("R3's scenario configs not present")
+    with open(path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    # allocation="route": since #38 the default is contract_net, which never
+    # hits the cut-off stop here, so the test would pass on the old planner too.
+    cfg.update(mode="independent", disruption_rate_per_hour=20.0, run_id="crash_regression",
+               log_path=str(tmp_path / "log.jsonl"), allocation="route",
+               planner={"min_gain_s": 0.0, "min_gain_frac": 0.0})
+    log = run_from_config(cfg)
+    with open(log, encoding="utf-8") as f:
+        out = [json.loads(line) for line in f]
+    assert any(r["event"] == "sim_complete" for r in out)
+    unreachable = [r for r in out if r["event"] == "order_failed"
+                   and r["payload"]["reason"] == "unreachable"]
+    assert len(unreachable) == 0
+    reordered = [r for r in out if r["event"] == "stop_unreachable"
+                 and r["payload"].get("reordered") is True]
+    assert reordered, "the fix was not exercised: no stop_unreachable row with reordered"

@@ -236,24 +236,34 @@ class ReplanningAgent:
 
     # -- W5: unreachable stops ------------------------------------------
     def drop_stops(self, stops: Iterable[Any], t_seconds: float) -> Route:
-        """Give up on these stops and plan through the rest.
+        """Plan again after some stops became unreachable in the planned order.
 
-        A fresh multi-stop D* Lite is built from the planning start (rare, so
-        a full search is fine). If dropping a stop leaves another stop cut
-        off, that one is dropped too. Returns the new Route; ``dropped`` lists
-        every stop given up, in order.
+        A stop can be cut off only from the stop before it (that stop became a
+        dead end) while the vehicle can still reach it. So (W7 fix):
+
+        1. stops the vehicle cannot reach at all from its planning start, with
+           the costs it knows now, are dropped;
+        2. the rest keep their planned order where each leg is possible; a stop
+           that is not reachable from the one before it is moved to the first
+           place where it fits (after a stop that reaches it, before one it
+           reaches), else to the end; one that fits nowhere is dropped.
+
+        Then a fresh multi-stop D* Lite is built. ``stops`` (the stops whose leg
+        failed) is kept for the call signature; the decision uses reachability.
+        Sets ``dropped`` (stops given up, in planned order) and ``reordered``.
+        Weeks 5-6 dropped every stop after a cut-off one, which failed orders
+        the vehicle could still reach.
         """
         cpu0 = self._start_clock()
         old = self.replanner
-        drop = set(stops)
-        self.dropped: List[Any] = []
         start = self.planning_start()
-        while True:
-            keep = [s for s in old.planner.remaining_stops if s not in drop]
-            self.dropped = [s for s in old.planner.remaining_stops if s in drop]
-            ids = [old.order_ids.get(s) for s in keep]
-            fresh = VehicleReplanner(self.world, start, keep, t_seconds,
-                                     self.heuristic, ids)
+        planned = list(old.planner.remaining_stops)
+        order, self.dropped = self._feasible_order(start, planned)
+        self.reordered = order != [s for s in planned if s not in set(self.dropped)]
+        drop = set(self.dropped)
+        while True:                       # safety net: the D* Lite legs must agree
+            ids = [old.order_ids.get(s) for s in order]
+            fresh = VehicleReplanner(self.world, start, order, t_seconds, self.heuristic, ids)
             fresh.watched |= old.watched
             fresh.avoid = dict(old.avoid)
             fresh.refresh(t_seconds)
@@ -261,9 +271,83 @@ class ReplanningAgent:
             if not cut:
                 break
             drop |= set(cut)
+            order = [s for s in order if s not in drop]
+            self.dropped = [s for s in planned if s in drop]
         self.replanner = fresh
         path = fresh.planner.path()
         return self._switch(path, t_seconds, cpu0)
+
+    # -- R1 W5: new stop list (contract-net awarded or took an order) ----
+    def set_stops(self, stops: Sequence[Any], t_seconds: float,
+                  order_ids: Optional[Sequence[Any]] = None) -> Route:
+        """Plan from the planning start through these stops, in this order.
+
+        Same steps as drop_stops: a fresh multi-stop D* Lite from where the
+        vehicle can next decide, keeping the roads it watches and the roads
+        it agreed to keep off. If a stop cannot be reached, the vehicle keeps
+        its old route and an empty Route is returned (as in _choose), so the
+        caller can drop the cut-off stops (AgentPlanner._handle_unreachable).
+        """
+        cpu0 = self._start_clock()
+        old = self.replanner
+        fresh = VehicleReplanner(self.world, self.planning_start(), list(stops), t_seconds,
+                                 self.heuristic, list(order_ids) if order_ids else None)
+        fresh.watched |= old.watched
+        fresh.avoid = dict(old.avoid)
+        fresh.refresh(t_seconds)
+        self.replanner = fresh
+        path = fresh.planner.path()
+        if not path:
+            self.last_decision = "unreachable"
+            self.route = Route([], [], [])
+            self.n_replans += 1
+            self._spent(cpu0)
+            return self.route
+        return self._switch(path, t_seconds, cpu0)
+
+    def _feasible_order(self, start: Any, planned: List[Any]):
+        """(order, dropped) for ``drop_stops``, by reachability over the
+        planner's current costs (closed or avoided roads are inf)."""
+        legs = self.replanner.planner.legs
+        if not legs:
+            return list(planned), []
+        graph = legs[0].graph
+        cache: Dict[Any, set] = {}
+
+        def reach(src):
+            if src not in cache:
+                seen, todo = {src}, [src]
+                while todo:
+                    u = todo.pop()
+                    for v, c in graph.get(u, {}).items():
+                        if c != INF and v not in seen:
+                            seen.add(v)
+                            todo.append(v)
+                cache[src] = seen
+            return cache[src]
+
+        from_start = reach(start)
+        order, deferred = [], []
+        pos = start
+        for s in planned:
+            if s not in from_start:
+                continue
+            if s in reach(pos):
+                order.append(s)
+                pos = s
+            else:
+                deferred.append(s)
+        unplaced = []
+        for s in deferred:
+            for i in range(len(order) + 1):
+                prev = start if i == 0 else order[i - 1]
+                if s in reach(prev) and (i == len(order) or order[i] in reach(s)):
+                    order.insert(i, s)
+                    break
+            else:
+                unplaced.append(s)
+        dropped = set(unplaced) | {s for s in planned if s not in from_start}
+        return order, [s for s in planned if s in dropped]
 
     # -- W5: keep off a road after losing a negotiation ------------------
     def avoid_road(self, u: Any, v: Any, until_t: float, t_seconds: float
@@ -411,6 +495,30 @@ class AgentPlanner(Planner):
         self.agents[vehicle.id] = agent
         return agent.route
 
+    def set_stops(self, vid: str, orders: Sequence[Any], t: float) -> Route:
+        """Replace a vehicle's stops mid-run with its orders' nodes, in order
+        (R1 W5: R4's contract-net awarded it an order or took one away).
+
+        Logged as a ``replan`` row with trigger ``new_order``. A cut-off stop
+        goes through the unreachable policy; in full mode R5's hook runs on
+        the new route, as after any replan.
+        """
+        agent = self.agents[vid]
+        stops, ids = [], []
+        for o in orders:
+            if stops and stops[-1] == o.node:     # two orders at one stop
+                continue
+            stops.append(o.node)
+            ids.append(o.id)
+        start = agent.planning_start()
+        route = agent.set_stops(stops, t, ids)
+        self._log_replan(vid, agent, route, start, "new_order", None)
+        if not route.nodes and self.unreachable == "fail":
+            route = self._handle_unreachable(vid, agent, t)
+        if route.nodes:
+            self._after_replan(vid, route, t)
+        return route
+
     def plan(self, vehicles: List[Any], orders: List[Any]) -> Dict[str, Route]:
         """Planner interface: a Route per vehicle through the order nodes on
         its current route (orders are matched to vehicles by route node)."""
@@ -492,7 +600,12 @@ class AgentPlanner(Planner):
         start = agent.planning_start()
         route = agent.drop_stops(stops, t)
         dropped = set(agent.dropped)
-        orders = [o for o in self.pending_orders(vid) if o.node in dropped]
+        v = agent.vehicle
+        serving = v.current_node if v.current_edge is None else None
+        # never fail an order at the node the vehicle is at: R1's environment
+        # may be serving it right now (removing it then crashed the run, W7)
+        orders = [o for o in self.pending_orders(vid)
+                  if o.node in dropped and o.node != serving]
         taken = set()
         if orders and self.reassign is not None:
             try:
@@ -513,6 +626,7 @@ class AgentPlanner(Planner):
         self.reassigned.extend(reassigned)
         self.env.log_event("stop_unreachable", {
             "stops": list(agent.dropped),
+            "reordered": bool(getattr(agent, "reordered", False)),
             "failed": failed,
             "reassigned": reassigned,
         }, agent_id=vid)

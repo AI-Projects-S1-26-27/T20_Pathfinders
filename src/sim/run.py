@@ -5,7 +5,8 @@ The config's ``mode`` picks the condition (plan section 7.1):
 * ``centralized``: R4's AllocationSimulation; R4 re-solves the whole fleet
   (OR-Tools) on every event. Vehicles' hand-written routes are not used.
 * ``independent``: R1's environment + R7's AgentPlanner; each vehicle
-  replans locally with D* Lite, never negotiates.
+  replans locally with D* Lite, never negotiates. Orders are handed out by
+  R4's contract-net (``allocation: contract_net``, D8; src/sim/dispatch.py).
 * ``full``: as independent, plus R5's trigger + negotiation after every
   replan (src/sim/coordination_hook.py).
 """
@@ -20,6 +21,9 @@ from src.sim.models import Order, Vehicle
 from src.sim.world import DEFAULT_MAP_PATH, World
 
 MODES = ("centralized", "independent", "full")
+# independent/full: who hands out orders. contract_net = R4's auction (D8),
+# incl. orders released mid-run; route = W4's first-vehicle-on-route rule.
+ALLOCATIONS = ("contract_net", "route")
 
 # Optional `planner:` block (independent/full): R7's AgentPlanner settings.
 PLANNER_DEFAULTS: Dict[str, Any] = {
@@ -93,9 +97,14 @@ def build_simulation(config: Dict[str, Any], world=None) -> Tuple[Any, Optional[
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
     planner_cfg = _block(config, "planner", PLANNER_DEFAULTS)
     coord_cfg = _block(config, "coordination", COORDINATION_DEFAULTS)
+    use_predictor = config.get("predictor", True)
+    if not isinstance(use_predictor, bool):
+        raise ValueError(f"predictor must be true or false, got {use_predictor!r}")
     if world is None:
         map_path = config.get("map_path", DEFAULT_MAP_PATH)
         world = World.from_defaults(map_path, seed=int(config.get("seed", 42)))
+    if not use_predictor:
+        world.predictor = None    # R6 ablation: plan on free-flow, not forecasts
 
     vehicles = [build_vehicle(v) for v in config.get("vehicles", [])]
     orders = [build_order(o) for o in config.get("orders", [])]
@@ -114,7 +123,16 @@ def build_simulation(config: Dict[str, Any], world=None) -> Tuple[Any, Optional[
     from src.search.heuristics import make_heuristic
     from src.sim.agent_planner import AgentPlanner
 
+    allocation = str(config.get("allocation", "contract_net"))
+    if allocation not in ALLOCATIONS:
+        raise ValueError(f"allocation must be one of {ALLOCATIONS}, got {allocation!r}")
+
     env = DeliverySimEnvironment(world, config)
+    dispatcher = None
+    if allocation == "contract_net":
+        from src.sim.dispatch import ContractNetDispatcher
+
+        dispatcher = ContractNetDispatcher(env, None, mode)
     hook = None
     if mode == "full":
         from src.coordination.trigger import ThresholdTrigger
@@ -130,18 +148,26 @@ def build_simulation(config: Dict[str, Any], world=None) -> Tuple[Any, Optional[
         unreachable=str(planner_cfg["unreachable"]),
         min_gain_s=float(planner_cfg["min_gain_s"]),
         min_gain_frac=float(planner_cfg["min_gain_frac"]),
+        reassign=dispatcher.reassign if dispatcher else None,
     )
-    for order in orders:
-        env.add_order(order)
-    # TODO(R4): independent/full could take R4's contract-net assignment instead.
-    assignment = assign_orders(vehicles, orders)
-    for vehicle in vehicles:
-        planner.register(vehicle, assignment[vehicle.id])   # sets remaining_route
-        env.add_vehicle(vehicle, assignment[vehicle.id])
-    # Every order must end delivered or failed: one no vehicle got (only
-    # possible with no vehicles) fails as no_vehicle right after sim_start.
-    given = {o.id for mine in assignment.values() for o in mine}
-    env.unassigned = [o for o in orders if o.id not in given]
+    if dispatcher is not None:
+        # D8: R4's contract-net; vehicles wait idle for orders released later.
+        dispatcher.planner = planner
+        env.idle_wait = True
+        env.dispatcher = dispatcher
+        dispatcher.setup(vehicles, orders)
+    else:
+        # "route" (W4): each order to the first vehicle whose hand-written route visits it.
+        for order in orders:
+            env.add_order(order)
+        assignment = assign_orders(vehicles, orders)
+        for vehicle in vehicles:
+            planner.register(vehicle, assignment[vehicle.id])   # sets remaining_route
+            env.add_vehicle(vehicle, assignment[vehicle.id])
+        # Every order must end delivered or failed: one no vehicle got (only
+        # possible with no vehicles) fails as no_vehicle right after sim_start.
+        given = {o.id for mine in assignment.values() for o in mine}
+        env.unassigned = [o for o in orders if o.id not in given]
     env.add_finisher(planner.finish)          # replan_summary before sim_complete
     return env, planner
 
@@ -150,6 +176,7 @@ def run_from_config(config: Dict[str, Any], world=None) -> str:
     """Build the world, vehicles and orders from a config and run. Returns the log path."""
     env, _ = build_simulation(config, world)
     env.run(float(config.get("duration_seconds", DEFAULT_DURATION_S)))
+    env.logger.close()          # R4's runner logs after env.run; release the file
     return env.log_path
 
 
