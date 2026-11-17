@@ -14,9 +14,11 @@ own ReplayRenderer. This file adds only what a comparison needs:
 - negotiation flashes (an orange ring for 60 sim-seconds after a negotiation_result row);
 - playback keys for --show.
 
-The message rows (allocation / negotiation_request / negotiation_response /
-negotiation_result) are NOT logged by any code yet. Their payload contract here is an
-assumption to confirm with R5, R1 and R8; see docs/multipane_viz.md.
+Message rows (Week 7) are logged and defined in docs/log_schema.md: R4's contract-net
+`allocation` rows (independent/full), R5's negotiation_request / negotiation_response /
+negotiation_result (full, payload["count"] messages, D7) and R4's centralized
+central_state_report / central_plan_broadcast (one message each). The HUD counts them per
+row exactly as replay.messages_at does; see docs/multipane_viz.md.
 
 Week 6 (hardening): the static roads of each pane are drawn once into an image at the
 output pixel size (PaneRenderer.prerender; --no-prerender switches it off), the figure
@@ -34,11 +36,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.viz.replay import (DEFAULT_FPS, DEFAULT_STEP_S, MAX_FRAMES_HINT, OUT_DIR,
                             LogFormatError, ReplayRenderer, ReplayState, format_clock,
-                            frame_times, load_config, load_graph_for, load_log, parse_time,
-                            spike_max_from, state_at, time_range)
+                            frame_times, load_config, load_graph_for, load_log,
+                            message_row_count, parse_time, spike_max_from, state_at,
+                            time_range)
 
 MESSAGE_TYPES = ("allocation", "negotiation_request", "negotiation_response",
                  "negotiation_result")
+# R4's centralized re-solve: one report and one plan broadcast per vehicle, 1 message each.
+CENTRAL_TYPES = ("central_state_report", "central_plan_broadcast")
 FLASH_S = 60.0                  # a negotiation_result ring stays this many sim-seconds
 SHORT_LOG_EVENTS = 5            # fewer events than this: say so in the pane
 SPEEDS = (0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0)
@@ -108,24 +113,32 @@ def shared_range(event_lists: Sequence[list], config: Optional[dict] = None
 # Counters (plain data, no matplotlib)
 # ---------------------------------------------------------------------------
 
-def _row_count(event) -> int:
-    """How many messages a row stands for: payload.count, default 1."""
-    return int(event["payload"].get("count", 1))
-
-
 def message_counts_at(events, t: float) -> Optional[Dict[str, int]]:
-    """Messages per D7 type up to time t, plus "total".
+    """Messages up to time t: per MESSAGE_TYPES type, "central" for R4's CENTRAL_TYPES
+    rows, and "total".
 
-    Returns None if the log has no message-type rows at all: then the HUD shows
+    The four MESSAGE_TYPES keys are present if the log has any row of those types,
+    "central" if it has any CENTRAL_TYPES row. Each row adds replay.message_row_count
+    (payload["count"], default 1), so "total" equals replay.messages_at(events, t)["total"].
+    Returns None if the log has no message row at all: then the HUD shows
     "n/a (not logged)", because 0 would claim that no messages were sent.
     """
-    if not any(e["event"] in MESSAGE_TYPES for e in events):
+    names = {e["event"] for e in events}
+    has_d7, has_central = bool(names & set(MESSAGE_TYPES)), bool(names & set(CENTRAL_TYPES))
+    if not (has_d7 or has_central):
         return None
-    counts = {k: 0 for k in MESSAGE_TYPES}
+    counts = {k: 0 for k in MESSAGE_TYPES} if has_d7 else {}
+    if has_central:
+        counts["central"] = 0
     for e in events:
-        if e["event"] in counts and float(e["t"]) <= t:
-            counts[e["event"]] += _row_count(e)
-    counts["total"] = sum(counts[k] for k in MESSAGE_TYPES)
+        name = e["event"]
+        if float(e["t"]) > t:
+            continue
+        if name in MESSAGE_TYPES:
+            counts[name] += message_row_count(e)
+        elif name in CENTRAL_TYPES:
+            counts["central"] += message_row_count(e)
+    counts["total"] = sum(counts.values())
     return counts
 
 
@@ -245,9 +258,14 @@ def pane_hud_text(label: str, frame: PaneFrame, log_end: Optional[float] = None,
     if msg is None:
         lines.append("messages: n/a (not logged)")
     else:
-        lines.append(f"messages: {msg['total']} (alloc {msg['allocation']}, "
-                     f"req {msg['negotiation_request']}, resp {msg['negotiation_response']}, "
-                     f"result {msg['negotiation_result']})")
+        parts = []
+        if "allocation" in msg:
+            parts.append(f"alloc {msg['allocation']}, req {msg['negotiation_request']}, "
+                         f"resp {msg['negotiation_response']}, "
+                         f"result {msg['negotiation_result']}")
+        if "central" in msg:
+            parts.append(f"central {msg['central']}")
+        lines.append(f"messages: {msg['total']} ({', '.join(parts)})")
         f = frame.flashes
         lines.append(f"negotiation flashes: {f.active} active, {f.undrawn} not drawn")
     if no_config:

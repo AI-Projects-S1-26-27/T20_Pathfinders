@@ -29,6 +29,21 @@ DEFAULT_STEP_S = 30.0
 DEFAULT_FPS = 15
 MAX_FRAMES_HINT = 600
 OUT_DIR = Path("reports") / "replay"
+# Message rows (D7: point-to-point = 1, broadcast to m agents = m) -> HUD group.
+# negotiation_* (R5, full mode) carry payload["count"]; R4's rows are one message each:
+# contract-net "allocation" (independent/full), and in centralized mode one
+# central_state_report per vehicle and one central_plan_broadcast per vehicle per
+# re-solve (CentralResult.messages = 2 x vehicles). allocation_complete only repeats
+# those totals, so it is not counted again.
+MESSAGE_GROUPS = {
+    "negotiation_request": "negotiation",
+    "negotiation_response": "negotiation",
+    "negotiation_result": "negotiation",
+    "allocation": "allocation",
+    "central_state_report": "central",
+    "central_plan_broadcast": "central",
+}
+GROUP_ORDER = ("negotiation", "allocation", "central")
 
 COLORS = {
     "driving": "#1f77b4",       # blue
@@ -114,6 +129,33 @@ class ReplayState:
     spikes: List[Tuple[Tuple[int, int, int], float]] = field(default_factory=list)
     counters: Dict[str, int] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
+    # Messages up to t per group of MESSAGE_GROUPS that occurs anywhere in the log;
+    # None if the log has no message row at all (the HUD then says "not logged", not 0).
+    messages: Optional[Dict[str, int]] = None
+
+
+def message_row_count(event) -> int:
+    """Messages one row stands for: payload["count"] (D7) if given, else 1."""
+    return int(event["payload"].get("count", 1))
+
+
+def messages_at(events, t: float) -> Optional[Dict[str, int]]:
+    """Running message total up to time t (inclusive), by group plus "total".
+
+    Groups are the MESSAGE_GROUPS values present anywhere in the log, so a group
+    that is logged but has no row yet at t shows 0. None if the log has no
+    message row at all.
+    """
+    present = {MESSAGE_GROUPS[e["event"]] for e in events if e["event"] in MESSAGE_GROUPS}
+    if not present:
+        return None
+    counts = {g: 0 for g in GROUP_ORDER if g in present}
+    for e in events:
+        group = MESSAGE_GROUPS.get(e["event"])
+        if group is not None and float(e["t"]) <= t:
+            counts[group] += message_row_count(e)
+    counts["total"] = sum(counts.values())
+    return counts
 
 
 def _node_latlon(graph, node):
@@ -251,6 +293,7 @@ def state_at(events, t: float, config: Optional[dict] = None, graph=None) -> Rep
         "spikes_total": spikes_total,
         "closure_skipped": skipped,
     }
+    state.messages = messages_at(events, t)
     return state
 
 
@@ -468,10 +511,17 @@ def hud_text(state: ReplayState) -> str:
         f"closures: {c.get('closures_active', 0)} active / {c.get('closures_total', 0)} so far"
         f"   (skipped {c.get('closure_skipped', 0)})",
         f"spikes:   {c.get('spikes_active', 0)} active / {c.get('spikes_total', 0)} so far",
-        # TODO(R5/R8): show agent messages once the log has message events.
-        "messages: n/a",
+        messages_text(state.messages),
     ]
     return "\n".join(lines)
+
+
+def messages_text(messages: Optional[Dict[str, int]]) -> str:
+    """HUD line: running total up to t, or "not logged" if the log has no message rows."""
+    if messages is None:
+        return "messages: not logged"
+    parts = ", ".join(f"{g} {messages[g]}" for g in GROUP_ORDER if g in messages)
+    return f"messages: {messages['total']} so far ({parts})"
 
 
 def spike_max_from(events, config=None) -> float:

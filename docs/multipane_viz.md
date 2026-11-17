@@ -10,30 +10,34 @@ playback keys.
 ## How to run (from the repo root)
 
 ```bash
-# 1. Demo pair: same config, seed and rate, without and with R7's planner
-#    (writes logs/pair_noreplan.jsonl and logs/pair_independent.jsonl)
-python -m src.viz.demo_pair                      # --rate 120 by default (stress setting)
+# 1. Demo runs: same config, seed and rate in every condition (Week 7)
+#    writes logs/pair_noreplan.jsonl, pair_independent.jsonl, pair_full.jsonl and, with
+#    --centralized, pair_centralized.jsonl (stopped after 10 min: then no file)
+python -m src.viz.demo_pair --centralized         # --rate 120 by default (stress setting)
 
 # 2. Live window with playback keys
-python -m src.viz.multipane --logs logs/pair_noreplan.jsonl logs/pair_independent.jsonl \
-    --labels "no replanning (R1 sim only)" "independent (R7 AgentPlanner)" \
-    --config configs/viz_demo.yaml --show
+python -m src.viz.multipane \
+    --logs logs/pair_centralized.jsonl logs/pair_independent.jsonl logs/pair_full.jsonl \
+    --labels "centralized" "independent" "full" --config configs/viz_demo.yaml --show
 
 # 3. Or a video (reports/replay/multipane_<run ids>.gif, .mp4 with ffmpeg) / one PNG
-python -m src.viz.multipane --logs logs/pair_noreplan.jsonl logs/pair_independent.jsonl \
-    --labels "no replanning" "independent" --config configs/viz_demo.yaml --end 07:00
-python -m src.viz.multipane --logs logs/pair_noreplan.jsonl logs/pair_independent.jsonl \
-    --labels "no replanning" "independent" --config configs/viz_demo.yaml \
-    --snapshot-t 06:28 --png reports/replay/pair_0628.png
+python -m src.viz.multipane \
+    --logs logs/pair_centralized.jsonl logs/pair_independent.jsonl logs/pair_full.jsonl \
+    --labels "centralized" "independent" "full" --config configs/viz_demo.yaml --end 07:00
+python -m src.viz.multipane \
+    --logs logs/pair_centralized.jsonl logs/pair_independent.jsonl logs/pair_full.jsonl \
+    --labels "centralized" "independent" "full" --config configs/viz_demo.yaml \
+    --snapshot-t 06:08:17 --png docs/multipane_example.png --png-dpi 75
 ```
+
+If the centralized run does not finish in 10 minutes, use
+`logs/pair_noreplan.jsonl` (label `no replanning`) as the first pane instead.
 
 Options: `--step 30` (sim seconds per frame), `--fps 15`, `--dpi 80`, `--start` / `--end`
 (HH:MM or seconds from midnight), `--out <path>`, `--layout row|column` (side by side, or
 stacked), `--allow-mismatch` (see below). A third log is added with a third `--logs` path
 and a third `--labels` string. Rendered files go to `reports/replay/` and are not
-committed. At 06:28 in the demo pair the left pane shows V7 and V8 red (waiting together
-at a closed road, 10 waits so far, 0 replans) and the right pane shows V8 already done
-and V7 driving (0 waits, 314 replans).
+committed (except `docs/multipane_example.png`, Week 7 below).
 
 ## Playback keys (`--show`)
 
@@ -74,14 +78,14 @@ expected to differ and are not checked; `rate` is not checked either (shown in e
 The shared clock runs over the union of the logs' time ranges (`time_range` of each
 non-empty log: `sim_start`/`duration_seconds` if logged, else first/last `t`). If every
 log is empty it falls back to the config's `start_time_s` and `duration_seconds`. A pane
-whose log ended earlier keeps its last state and its HUD adds `(this log ended at HH:MM)`.
+whose log ended earlier keeps its last state and its HUD adds
+`FINISHED: log ended at HH:MM, last state held` (Week 6).
 The spike colour scale is the same in all panes (the largest `max_spike` / magnitude over
 all logs), so equal colours mean equal multipliers.
 
 ### HUD per pane
 
-The Week 4 HUD (`hud_text`, with its fixed `messages: n/a`) is hidden; each pane has its
-own:
+The single-pane HUD of `replay.py` (`hud_text`) is hidden; each pane has its own:
 
 ```
 <label>
@@ -90,7 +94,7 @@ orders: d delivered / f failed / n total
 closures active: a   spikes active: s
 waits at closed roads: <blocked_wait rows up to t>   replans: <replan rows up to t>
 trigger: on | off | n/a        <- latest trigger_toggle row up to t; n/a if none
-messages: n/a (not logged)     <- or: messages: T (alloc a, req q, resp p, result r)
+messages: n/a (not logged)     <- or: messages: T (alloc a, req q, resp p, result r[, central c])
 negotiation flashes: k active, u not drawn      <- only when messages are logged
 ```
 
@@ -101,26 +105,31 @@ agent whose route changed, so one closure can add several.
 
 ### The n/a rule for messages
 
-`message_counts_at(events, t)` counts the four D7 types: `allocation`,
-`negotiation_request`, `negotiation_response`, `negotiation_result`. Each row adds
-`payload.get("count", 1)`. Only rows with `t <= t_now` count. If the log has **no** row of
-any of these types (anywhere in the log), the function returns `None` and the HUD shows
-`messages: n/a (not logged)`, because showing `0` would claim that no messages were sent.
-If the log has message rows but none yet at `t`, the HUD shows `0`, which is then true.
+`message_counts_at(events, t)` counts the four types `allocation` (R4's contract-net),
+`negotiation_request`, `negotiation_response`, `negotiation_result` (R5) one by one, and
+R4's centralized rows `central_state_report` and `central_plan_broadcast` together as
+`central`. Each row adds `replay.message_row_count` (`payload.get("count", 1)`), so the
+total is always equal to `replay.messages_at(events, t)["total"]` (a test checks this for
+centralized, full and mixed logs). Only rows with `t <= t_now` count. The four `alloc / req
+/ resp / result` numbers are shown if the log has any of those rows, `central c` if it
+has any `central_*` row. If the log has **no** message row at all (anywhere in the log),
+the function returns `None` and the HUD shows `messages: n/a (not logged)`, because
+showing `0` would claim that no messages were sent. In the Week 7 demo runs that is only
+the no-replanning run. If the log has message rows but none yet at `t`, the HUD shows
+`0`, which is then true.
 
-## Negotiation event contract (an assumption, to confirm with R5, R1 and R8)
+## Negotiation event contract (Week 7: now in `docs/log_schema.md`)
 
-No code logs message rows yet (see Gaps). The viewer assumes this contract; nothing in
-the log schema guarantees it, so it must be agreed with **R5** (who sends the messages),
-**R1** (who owns the log schema, `docs/log_schema.md`) and **R8** (who counts them for the
-metrics):
+R5's hook (`src/sim/coordination_hook.py`, mode full) and R4's contract-net
+(`src/sim/dispatch.py`, independent/full) now write these rows; the payloads are defined in
+`docs/log_schema.md` and match what the viewer reads:
 
-| event | agent_id | payload (assumed) |
-|-------|----------|-------------------|
-| `allocation` | env or vehicle | `{"count": int (optional, default 1), ...}` |
-| `negotiation_request` | vehicle | `{"count": int (optional, default 1), ...}` |
-| `negotiation_response` | vehicle | `{"count": int (optional, default 1), ...}` |
-| `negotiation_result` | vehicle or env | `{"count": int (optional), "edge": [u, v, key] (optional), "vehicles": [ids] (optional)}` |
+| event | agent_id | payload (from `docs/log_schema.md`) |
+|-------|----------|-------------------------------------|
+| `allocation` | vehicle / `manager` | `{"phase", "recipient", "order_id", "sender"?, "cost"?}`, one row per message (no `count`, so 1) |
+| `negotiation_request` | vehicle | `{"count": 1, "edge": [u, v, key]}` |
+| `negotiation_response` | vehicle | `{"count": 1, "edge": [u, v, key]}` |
+| `negotiation_result` | env | `{"count": m, "edge": [u, v, key], "vehicles": [ids], "winner", "price", "ttc", "actions"}` |
 
 Flash rule (`flashes_at`): a `negotiation_result` row at `t0` is active while
 `t0 <= t < t0 + 60` (sim seconds). It is drawn as an orange ring
@@ -129,8 +138,8 @@ Flash rule (`flashes_at`): a `negotiation_result` row at `t0` is active while
 3. not drawn, and counted in the HUD as `u not drawn`, so a missing position is visible
    instead of silently dropped.
 
-`count` is how many messages one row stands for (so R5 can log one row per round instead
-of one per message). If R5 logs one row per message, `count` is simply left out.
+`count` is how many messages one row stands for (D7: a result told to m vehicles is m
+messages). R5's result rows always carry an on-map `edge`, so rule 1 applies.
 
 ## Measured performance
 
@@ -176,38 +185,25 @@ window shows about 6-7 frames per second, not 15.
 
 ## Gaps
 
-- **No real three-condition logs.** The plan's three conditions (independent,
-  centralized, full) need R1's mode switch in `src/sim/run.py`, R5's trigger and
-  negotiation hook, and R7's planner to be connected. Until then the only real pair is the
-  demo pair below, and a three-pane run can only reuse a log; the measurement above
-  labels the third pane `PLACEHOLDER: same log` so it cannot be read as a comparison.
-- **Message events do not exist yet.** `src/coordination/messages.py` and
-  `negotiation.py` count messages in memory (`MessageCounter`), and `AgentPlanner` keeps
-  only a number (`negotiation_messages`); nothing writes a message row to the JSONL. Every
-  real log shows `messages: n/a (not logged)` and no flashes. The flash and count code is
-  tested only on hand-made logs.
-- **The demo pair is not the experiment.** `src/viz/demo_pair.py` runs
+Week 5 gaps that are closed now (Week 7): the three real conditions exist (`run.py`'s
+mode switch, R5's hook and R7's planner are connected; see "Week 7" below), message rows
+are logged, and a vehicle waiting at a closed road follows a new route as soon as a
+planner gives it one (`_drive_route` in `src/sim/environment.py` leaves the wait loop when
+`remaining_route` is replaced). Still open:
+
+- **The demo runs are not the experiment.** `src/viz/demo_pair.py` runs
   `configs/viz_demo.yaml` (10 vehicles, 30 orders, seed 7) at 120 disruptions per hour, a
   stress setting picked so the panes show something. The `rate` also covers `new_order`
   events (341 disruptions + 132 new orders in 4 h). Condition (a) is labelled
   `no_replanning`, which is not one of the plan's modes; it is the plain R1 simulator.
-  Results from it are not experiment results.
+  Results from them are not experiment results.
 - **Same seed, but the disruptions may differ.** The closure guard (D11) depends on where
-  vehicles still need to go, which the planner changes, so the random stream can drift
-  apart between two runs. In the demo pair it did not (341 of 341 disruption rows
-  identical); `demo_pair.py` prints this check every run.
-- **Fleet finish time hides the difference.** In the demo pair both runs resolve their
-  last order at 06:36:53 (the last order belongs to a vehicle no closure touched), while
-  V8 finishes at 06:37 without replanning and 06:24 with it. Per-vehicle times are a
-  better measure than one fleet finish time.
-- **Dynamic orders are counted, not served.** The 14 dynamic orders released by 06:28
-  raise "total" (44 = 30 + 14) but never get delivered (TODO(R3) in
-  `src/sim/events.py`, unchanged from Week 4).
-- **Replans keep a waiting vehicle waiting.** R1's vehicle process pops the next node
-  before checking for a closure, so a vehicle already waiting at a closed road keeps
-  waiting even if a replan gives it a new route (read from
-  `src/sim/environment.py`, not tested). In the demo pair it did not show: the planner
-  run has 0 `blocked_wait` rows. Noted for R1 and R7, not changed here.
+  vehicles still need to go, which the planners change, so the random stream can drift
+  apart between runs. In the Week 7 runs it did not (all 4 logs share 341 of 341 disruption
+  rows); `demo_pair.py` prints this check every run.
+- **Dynamic orders are counted, not served.** `new_order` events (D11) have no node and
+  create no order (TODO(R3) in `src/sim/events.py`), so they only raise "total" in the HUD
+  (33 = 30 + 3 by 06:08:17).
 - **The window cannot keep up with `--fps`** because every frame is a full redraw
   (`blit=False`, see above).
 - Everything listed in `docs/replay_viz.md` (straight-line motion, order locations from
@@ -223,6 +219,9 @@ window shows about 6-7 frames per second, not 15.
 Result (a stress demo, not an experiment): no replanning 60 delivered, 0 failed, 83
 `blocked_wait`, 0 replans, last order 06:51:55; independent 60 delivered, 0 failed, 0
 `blocked_wait`, 730 replans, last order 06:36:17; 341 of 341 disruption rows identical.
+(These are the Week 6 logs: `demo_pair.py` then built the independent run itself, R7's
+planner on `run.py`'s first-vehicle route assignment. Since Week 7 it runs independent and
+full through `src/sim/run.py` with R4's contract-net, so a rerun gives other numbers.)
 
 Timing method as in Week 5: GIF via Pillow (no ffmpeg), `--dpi 80`, `--step 30`,
 06:00-07:00 = 121 frames (the busiest hour: 4,417 of 4,778 and 4,932 of 5,294 rows), 5 runs,
@@ -352,8 +351,9 @@ the same test run against the committed `multipane.py` (HEAD) in a scratch copy.
 `--snapshot-times 06:10 06:20 06:28 --png reports/replay/pair20.png` writes
 `pair20_0610.png`, `pair20_0620.png`, `pair20_0628.png` (316-326 KB at the default
 `--png-dpi 100`; not committed) from one figure, in 0.77 s for all three.
-`docs/multipane_example.png` is the 10-vehicle pair at 06:28 with `--png-dpi 90`
-(1008 x 687 px, 277 KB; at dpi 100 it was 319 KB, over the 300 KB limit).
+In Week 6 `docs/multipane_example.png` was the 10-vehicle pair at 06:28 with `--png-dpi 90`
+(1008 x 687 px, 277 KB; at dpi 100 it was 319 KB, over the 300 KB limit). Week 7 replaced
+it with the three real conditions (below).
 
 Looked at (by Claude Code, in the session): the clock, both HUDs and the legend are
 readable; the 20-vehicle 06:28 frame shows the wrapped label `V1,V7,V10,V13,V16` / `V19`.
@@ -373,5 +373,42 @@ the right pane 0 waits, 690 replans, V3, V8, V9 and V12 driving.
 - The column layout still uses fixed heights (not fitted).
 - dpi 60 readability and the live window on a 100%-scaled screen were not checked.
 - The 150 + 150 case uses disruptions injected into a real log, not simulator output.
-- One laptop, one session; the third pane is still a placeholder copy; all Week 5 gaps
-  (no message rows, no three real conditions) still apply.
+- One laptop, one session. The Week 5 and Week 6 timings above used a copy of the
+  independent log as the third pane (labelled `PLACEHOLDER: same log`), because the three
+  real conditions did not exist yet; they were not re-timed with the Week 7 logs.
+
+## Week 7: three real conditions
+
+`python -m src.viz.demo_pair --centralized` (default config `configs/viz_demo.yaml`, seed 7,
+120/h), output of the run in this session:
+
+| run | mode in the log | delivered | failed | `blocked_wait` | `replan` | last order resolved | wall time |
+|-----|-----------------|-----------|--------|----------------|----------|---------------------|-----------|
+| `pair_noreplan` | no_replanning | 30 | 0 | 23 | 0 | 06:36:53 | 4.5 s |
+| `pair_independent` | independent | 30 | 0 | 0 | 5 | 07:00:55 | 3.5 s |
+| `pair_full` | full | 30 | 0 | 0 | 6 | 07:00:55 | 4.2 s |
+| `pair_centralized` | centralized | 30 | 0 | 0 | 0 | 06:58:42 | 301.3 s |
+
+The centralized run finished inside the 10-minute limit. All 4 logs share 341 of 341
+disruption rows, and `python -m src.sim.check_log` says `ok` for each. The replans in
+independent and full are all `new_order` (contract-net awards) plus one
+`negotiation_yield` in full; none is triggered by a closure in these runs, so these
+panes show no closure detour. Messages in the whole run: full 627 (allocation 615,
+negotiation 12 = 2 auctions x 3 x 2 vehicles, equal to `replan_summary.negotiation_messages`),
+independent 615, centralized 10,060 `central_*` rows (equal to the sum of its
+`allocation_complete.messages`).
+
+![Three conditions at 06:08:17](multipane_example.png)
+
+*`docs/multipane_example.png`: `pair_centralized`, `pair_independent`, `pair_full` at
+06:08:17, 30 s after a closure started at 06:07:47 (road 12020059935 -> 2855064950); 6
+closures and 5 spikes active in every pane, 2 vehicles driving in each. Labels are the
+log's own modes. The seed check passed (same scenario `viz_demo`, seed 7; no
+`--allow-mismatch`). `--png-dpi 75`: 1260 x 570 px, 289 KB (dpi 90 was 381 KB, over the
+300 KB limit).*
+
+Message lines in the snapshot: centralized `messages: 880 (central 880)`, independent
+`messages: 615 (alloc 615, req 0, resp 0, result 0)`, full
+`messages: 627 (alloc 615, req 4, resp 4, result 4)`. Each was checked against
+`replay.messages_at` on the same log at 06:08:17, which gives 880 (central), 615
+(allocation) and 627 (allocation 615 + negotiation 12).
