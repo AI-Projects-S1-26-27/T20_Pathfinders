@@ -5,7 +5,9 @@ R3 · Week 6: rule-rejection statistics — how often the rules block an inserti
     python -m src.kr.rejection_stats --seeds 0 1 2    # more seeds
     python -m src.kr.rejection_stats --no-sim         # skip part B2 (no simulation)
 
-Part A, insertions (planning time). For each committed scenario (configs/scenarios/), orders are
+Part A, insertions (planning time). A stand-alone greedy allocation, not the one the experiments
+run: R4's contract-net uses its own capacity checks, and R3's rules are not called in the
+experiment runs. For each committed scenario (configs/scenarios/), orders are
 taken in (release_time, priority, tw_end, id) order and offered to every vehicle. A vehicle can
 take an order if R3's rules accept the vehicle's plan plus the order (csp fast path: KR-1
 capacity, KR-11 release, KR-8 windows, KR-10 shift, reachability, exact stop-order search up to
@@ -16,14 +18,18 @@ paths on the real map under each vehicle's road rules (R2's TravelTimeMatrix). P
 view: every vehicle plans from its depot at 06:00 and an order released later is served after
 its release (KR-7 wait), so KR-11 never blocks here.
 
-Part B, reroutes. B1 (KR-3, static): for large vehicles (no narrow roads), how many order nodes
-they cannot reach at all and how much longer the depot -> order trip is when they can. B2 (KR-4,
-dynamic): R1's simulator with R7's planner on the same scenarios (scripts/run_audit_demo.py's
-stand-in driver, 10 disruptions per hour): closures, replans that changed a route, replans that
-kept it, and vehicles that waited at a closed road.
+Part B, reroutes. B1 (KR-3, static): trips are (order node, hypothetical depot) pairs; depots are
+placed on the large-vehicle road network. For each trip: can a large vehicle (no narrow roads)
+make it at all, and how much longer is it than a small vehicle's. B2 (KR-4, dynamic): R1's
+simulator with R7's planner on the same scenarios, 10 disruptions per hour, run twice: with the
+stand-in driver's hand-written routes (scripts/run_audit_demo.py, allocation "route") and with
+the simulator's default allocation (R4's contract-net, the one the experiments use). Counted:
+closures, replans that changed a route, route checks that kept it, and vehicles that waited at a
+closed road.
 
-Deterministic: two runs with the same scenarios, seeds and rate gave byte-identical reports;
-tests/test_rejection_stats.py checks the counting and attribution on small cases.
+Deterministic: two runs with the same scenarios, seeds and rate gave byte-identical reports.
+tests/test_rejection_stats.py checks part A's counting and attribution, B1 on a small hand-made
+graph, and B2's counting (closure_counts) on hand-made log rows.
 """
 
 from __future__ import annotations
@@ -175,8 +181,11 @@ def road_class_effect(G, nodes, n_depots=3, seed=0) -> dict:
             elif small[n] > 0:
                 detours.append(large[n] / small[n] - 1.0)
     detours.sort()
+    by_class = Counter(reason.split("'")[1] for reason in bad.values() if "'" in reason)
     return {
         "depots": depots,
+        "depots_n": len(depots),
+        "order_nodes": len(set(nodes)),
         "large_network_nodes": len(net),
         "graph_nodes": G.number_of_nodes(),
         "depot_order_trips": trips,
@@ -190,20 +199,18 @@ def road_class_effect(G, nodes, n_depots=3, seed=0) -> dict:
             100 * sum(d for d in detours if d > 1e-9) / max(1, sum(d > 1e-9 for d in detours)), 1
         ),
         "edges_blocked_for_large": len(bad),
+        "edges_blocked_by_class": dict(sorted(by_class.items())),
         "edges_total": len(set(G.edges())),
     }
 
 
 # ---------------------------------------------------------------- part B2: KR-4 closures in the sim
-def closure_effect(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
-    """Run the audit demo's stand-in driver on one scenario; count closure effects in the log."""
-    import importlib.util
+STAND_IN = "route"  # the stand-in driver's hand-written routes
+EXPERIMENT = None  # the simulator's default allocation: R4's contract-net since R1's #38
 
-    spec = importlib.util.spec_from_file_location("demo", ROOT / "scripts" / "run_audit_demo.py")
-    demo = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(demo)
-    r = demo.run_one(name, rate, log_dir, graphs)
-    rows = [json.loads(line) for line in open(r["log"], encoding="utf-8") if line.strip()]
+
+def closure_counts(rows: list) -> dict:
+    """Closure effects in one simulator log (its rows, as dicts)."""
     ev = Counter(x["event"] for x in rows)
     disrupt = Counter(x["payload"].get("type") for x in rows if x["event"] == "disruption")
     replan = Counter(x["payload"].get("trigger") for x in rows if x["event"] == "replan")
@@ -221,7 +228,6 @@ def closure_effect(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
     }
     kept = Counter(x["payload"].get("trigger") for x in rows if x["event"] == "replan_kept")
     return {
-        "scenario": name,
         "closures": disrupt.get("closure", 0),
         # identities, so the report can count distinct closures: within one seed every
         # scenario sees the same disruption timeline
@@ -234,8 +240,27 @@ def closure_effect(name: str, rate: float, log_dir: Path, graphs: dict) -> dict:
         "replans_changed_by_spike": replan.get("traffic_spike", 0),
         "blocked_waits": ev.get("blocked_wait", 0),
         "capacity_blocked_at_delivery": ev.get("capacity_blocked", 0),
-        "audit_violations": r["total_violations"],
     }
+
+
+def closure_effect(
+    name: str, rate: float, log_dir: Path, graphs: dict, allocation=STAND_IN
+) -> dict:
+    """Run one scenario in the simulator and count closure effects in its log.
+
+    allocation=STAND_IN drives scripts/run_audit_demo.py's hand-written routes; EXPERIMENT (None)
+    leaves the simulator's default allocation, the one the experiments use."""
+    import importlib.util
+
+    # Loaded by file path (scripts/ is not a package). Always pass allocation: since R1's #38 the
+    # simulator's default (contract-net) ignores hand-written routes, so without allocation="route"
+    # the stand-in result silently becomes a contract-net result (tests/test_rejection_stats.py).
+    spec = importlib.util.spec_from_file_location("demo", ROOT / "scripts" / "run_audit_demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    r = demo.run_one(name, rate, log_dir, graphs, allocation=allocation)
+    rows = [json.loads(line) for line in open(r["log"], encoding="utf-8") if line.strip()]
+    return {"scenario": name, **closure_counts(rows), "audit_violations": r["total_violations"]}
 
 
 # ---------------------------------------------------------------- driver and report
@@ -255,7 +280,7 @@ def run(
     from src.sim.run import build_order, build_vehicle
 
     graphs: dict = {}
-    part_a, part_a_shift, b1_nodes, b2 = [], [], set(), []
+    part_a, part_a_shift, b1_nodes, b2, b2_exp = [], [], set(), [], []
     G = None
     for name in scenario_names(seeds):
         cfg = yaml.safe_load(
@@ -285,7 +310,8 @@ def run(
             part_a_shift.append(stats)
         b1_nodes |= {o.node for o in orders}
         if sim:
-            b2.append(closure_effect(name, rate, Path(log_dir), graphs))
+            b2.append(closure_effect(name, rate, Path(log_dir), graphs, STAND_IN))
+            b2_exp.append(closure_effect(name, rate, Path(log_dir), graphs, EXPERIMENT))
     b1 = road_class_effect(G, sorted(b1_nodes)) if G is not None else {}
     return {
         "seeds": list(seeds),
@@ -295,6 +321,7 @@ def run(
         "part_a_shift_end": part_a_shift,
         "part_b1": b1,
         "part_b2": b2,
+        "part_b2_contract_net": b2_exp,
     }
 
 
@@ -392,11 +419,14 @@ def report(res: dict) -> str:
         "",
         "## A. How often a rule blocks an insertion",
         "",
-        "Every order is offered to every vehicle (planning-time view, see the module docstring); "
-        "a rejected pair is attributed to the rule the rule engine reports. The split between "
-        "rules depends on how the scenarios were built (fleet capacity sized so total demand is "
-        "80% of it) and on the greedy assignment used here (least extra time, in release "
-        "order); another allocator would fill vehicles differently.",
+        "A stand-alone greedy allocation at planning time, not the allocation the experiments "
+        "run: R4's contract-net uses its own capacity checks, and R3's rules are not called in "
+        "the experiment runs. Every order is offered to every vehicle in release order and goes "
+        "to the eligible vehicle whose plan gets the least extra time; a rejected pair is "
+        "attributed to the rule the rule engine reports. That capacity (KR-1) is the only rule "
+        "that blocks follows from how the scenarios were built: fleet capacity is sized so total "
+        "demand is 80% of it, and every order is loaded at 06:00 with no unloading. It is not a "
+        "measurement of R4's runs.",
         "",
         "### A1. Scenarios as committed (no shift end)",
         "",
@@ -417,6 +447,7 @@ def report(res: dict) -> str:
         out += _rule_table(res["part_a_shift_end"])
         out += _scenario_table(res["part_a_shift_end"]) + [""]
     b1 = res["part_b1"]
+    by_class = ", ".join(f"{k} {v:,}" for k, v in b1.get("edges_blocked_by_class", {}).items())
     out += [
         "## B. How often a rule blocks a road (reroutes)",
         "",
@@ -424,17 +455,19 @@ def report(res: dict) -> str:
         "",
         "Large vehicles may not use residential, living_street, service or unclassified roads. "
         "The committed scenarios are small-fleet only (D2), so this measures what the rule would "
-        f"do: {len(b1.get('depots', []))} depots placed on the large-vehicle road network "
-        f"({b1.get('large_network_nodes', 0):,} of {b1.get('graph_nodes', 0):,} nodes), "
-        "trips to every order node of these scenarios, large vs small vehicle from the same "
-        "depot:",
+        f"do. A trip is an (order node, depot) pair: {b1.get('order_nodes', 0):,} distinct order "
+        f"nodes of these scenarios x {b1.get('depots_n', 0)} hypothetical depots, placed on the "
+        f"large-vehicle road network ({b1.get('large_network_nodes', 0):,} of "
+        f"{b1.get('graph_nodes', 0):,} nodes). Each trip is driven by a large and a small vehicle "
+        "from the same depot. Most trips are impossible because of the rule and the map together: "
+        f"the roads closed to large vehicles are {by_class}.",
         "",
         "| Measure | Value |",
         "|---|---|",
         f"| Roads (u -> v) closed to large vehicles | {b1.get('edges_blocked_for_large', 0):,} "
         f"of {b1.get('edges_total', 0):,} "
         f"({_pct(b1.get('edges_blocked_for_large', 0), b1.get('edges_total', 0))}) |",
-        f"| Depot -> order trips a large vehicle cannot make at all | "
+        f"| (Order node, hypothetical depot) trips a large vehicle cannot make at all | "
         f"{b1.get('unreachable_for_large', 0):,} of {b1.get('depot_order_trips', 0):,} "
         f"({_pct(b1.get('unreachable_for_large', 0), b1.get('depot_order_trips', 0))}) |",
         f"| Reachable trips that need a detour | {b1.get('reachable_trips_longer', 0):,} of "
@@ -449,34 +482,57 @@ def report(res: dict) -> str:
         out += [
             "### B2. Closures (KR-4) in the simulator",
             "",
-            f"R1's simulator with R7's planner and {res['rate']:g} disruptions per hour. The "
-            "routes come from the stand-in driver of scripts/run_audit_demo.py, not from R4's "
-            "allocation, so these counts will change once allocation is wired in. The "
-            "disruption timeline depends only on the seed, so the scenarios of one seed share "
-            "the same closures: a row counts closure-scenario pairs, not distinct closures.",
+            f"R1's simulator with R7's planner and {res['rate']:g} disruptions per hour, each "
+            "scenario run twice. The disruption timeline depends only on the seed, so the "
+            "scenarios of one seed share the same closures: a row counts closure-scenario pairs, "
+            "not distinct closures.",
             "",
-            *_distinct_closure_lines(res["part_b2"]),
-            "",
-            "| Scenario | Closures | Closures that changed a route | Routes changed | Route "
-            "checks that kept the route | Vehicles waiting at a closed road | Audit violations |",
-            "|---|---|---|---|---|---|---|",
         ]
-        tb = Counter()
-        for r in res["part_b2"]:
-            tb.update({k: v for k, v in r.items() if isinstance(v, int)})
-            out.append(
-                f"| {r['scenario']} | {r['closures']} | {r['closures_that_changed_a_route']} | "
-                f"{r['replans_changed_by_closure']} | "
-                f"{r['replans_kept_after_closure']} | {r['blocked_waits']} | "
-                f"{r['audit_violations']} |"
-            )
-        out.append(
-            f"| **all** | **{tb['closures']}** | **{tb['closures_that_changed_a_route']}** | "
-            f"**{tb['replans_changed_by_closure']}** | "
-            f"**{tb['replans_kept_after_closure']}** | **{tb['blocked_waits']}** | "
-            f"**{tb['audit_violations']}** |"
+        out += _b2_section(
+            "B2a. Stand-in hand-written routes",
+            "Routes from the stand-in driver of scripts/run_audit_demo.py (allocation \"route\"): "
+            "every vehicle gets a fixed share of the orders up front and drives one route through "
+            "all of them. This is not the system the experiments run.",
+            res["part_b2"],
         )
-    return "\n".join(out) + "\n"
+        if res.get("part_b2_contract_net"):
+            out += _b2_section(
+                "B2b. Contract-net, the allocation the experiments use",
+                "The simulator's default allocation (R4's contract-net since R1's #38): orders "
+                "are auctioned to vehicles as they are released, instead of split up front.",
+                res["part_b2_contract_net"],
+            )
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def _b2_section(title: str, text: str, rows: list) -> list:
+    out = [
+        f"#### {title}",
+        "",
+        text,
+        "",
+        *_distinct_closure_lines(rows),
+        "",
+        "| Scenario | Closures | Closures that changed a route | Routes changed | Route "
+        "checks that kept the route | Vehicles waiting at a closed road | Audit violations |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    tb = Counter()
+    for r in rows:
+        tb.update({k: v for k, v in r.items() if isinstance(v, int)})
+        out.append(
+            f"| {r['scenario']} | {r['closures']} | {r['closures_that_changed_a_route']} | "
+            f"{r['replans_changed_by_closure']} | "
+            f"{r['replans_kept_after_closure']} | {r['blocked_waits']} | "
+            f"{r['audit_violations']} |"
+        )
+    out.append(
+        f"| **all** | **{tb['closures']}** | **{tb['closures_that_changed_a_route']}** | "
+        f"**{tb['replans_changed_by_closure']}** | "
+        f"**{tb['replans_kept_after_closure']}** | **{tb['blocked_waits']}** | "
+        f"**{tb['audit_violations']}** |"
+    )
+    return out + [""]
 
 
 def main(argv=None) -> int:
