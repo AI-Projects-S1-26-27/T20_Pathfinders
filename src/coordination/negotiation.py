@@ -44,6 +44,8 @@ def run_vickrey_auction(
 
     m_agents = len(contesting_routes)
     if msg_counter:
+        # D7: m results for m agents (1 request, 1 response, 1 result per
+        # participant).
         for _ in range(m_agents):
             msg_counter.log_message("negotiation_request")
             msg_counter.log_message("negotiation_response")
