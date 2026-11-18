@@ -1,0 +1,12 @@
+# R8 main sweep: 3 scenarios x 3 modes x 10 seeds x 5 rates = 450 runs.
+sweep_id: r8_main
+configs:
+  - configs/scenarios/small_uniform_s0.yaml
+  - configs/scenarios/medium_clustered_s0.yaml
+  - configs/scenarios/large_hotspot_s0.yaml
+modes: [centralized, independent, full]
+seeds: [1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108, 1109, 1110]
+rates: [0, 2, 5, 10, 20]
+predictor: [true]
+out_dir: runs/r8_main
+workers: 4

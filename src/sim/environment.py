@@ -182,8 +182,23 @@ class DeliverySimEnvironment:
                 deferred.add(order.id)    # retried if the route revisits this node
                 continue
             if ready_t > now:             # early: wait for the window / release
+                wait_id = f"{vehicle.id}:{order.id}:window:{now:.2f}"
+                self.log_event("wait_start", {"wait_id": wait_id, "order_id": order.id,
+                                              "reason": "time_window"}, agent_id=vehicle.id)
                 yield self.env.timeout(ready_t - now)
+                self.log_event("wait_end", {"wait_id": wait_id, "order_id": order.id,
+                                            "reason": "time_window", "duration_s": ready_t - now},
+                               agent_id=vehicle.id)
+            service_start = self.get_current_time()
+            self.log_event("service_start", {"order_id": order.id,
+                                             "service_time": order.service_time,
+                                             "tw_start": order.tw_start, "tw_end": order.tw_end},
+                           agent_id=vehicle.id)
             yield self.env.timeout(order.service_time)
+            self.log_event("service_end", {"order_id": order.id,
+                                           "service_time": order.service_time,
+                                           "duration_s": self.get_current_time() - service_start},
+                           agent_id=vehicle.id)
             if order not in pending:      # taken away during service: not ours now
                 continue
             vehicle.load += order.demand
@@ -209,12 +224,22 @@ class DeliverySimEnvironment:
             # Wait at a closed road; but if a planner replaces the route while
             # we wait (R7 replans around the closure), follow the new route.
             rerouted = False
+            wait_id = f"{vehicle.id}:{u}:{v}:{self.get_current_time():.2f}"
+            wait_start = None
             while self.world.is_blocked(u, v, self.get_current_time(), key):
+                if wait_start is None:
+                    wait_start = self.get_current_time()
+                    self.log_event("wait_start", {"wait_id": wait_id, "reason": "blocked_road",
+                                                  "edge": [u, v, key]}, agent_id=vehicle.id)
                 self.log_event("blocked_wait", {"edge": [u, v, key]}, agent_id=vehicle.id)
                 yield self.env.timeout(BLOCKED_POLL_S)
                 if vehicle.remaining_route is not route:
                     rerouted = True
                     break
+            if wait_start is not None:
+                self.log_event("wait_end", {"wait_id": wait_id, "reason": "blocked_road",
+                                            "duration_s": self.get_current_time() - wait_start},
+                               agent_id=vehicle.id)
             if rerouted:
                 continue
 
