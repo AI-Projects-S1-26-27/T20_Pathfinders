@@ -116,6 +116,45 @@ def test_runs_then_resumes_without_rerunning(tmp_path, grid_world):
     assert [r["run_id"] for r in rows] == sorted(s.run_id for s in specs)
 
 
+def test_results_record_the_commit(tmp_path, grid_world):
+    """W7: every result row says which code made it (git commit + dirty)."""
+    import csv
+    import re
+    import subprocess
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True,
+                          text=True, check=True).stdout.strip()
+    write_config(tmp_path)
+    specs = launcher.plan_runs(sweep(tmp_path, tmp_path / "grid.yaml"))
+    launcher.run_sweep(specs, workers=1, echo=lambda *_: None)
+    rows = launcher.collect_results(specs)
+    assert {r["commit"] for r in rows} == {head} and re.fullmatch(r"[0-9a-f]{40}", head)
+    assert all(isinstance(r["dirty"], bool) for r in rows)
+    launcher.write_results(rows, str(tmp_path / "results.csv"))
+    with open(tmp_path / "results.csv", encoding="utf-8") as f:
+        assert {r["commit"] for r in csv.DictReader(f)} == {head}
+
+
+def test_code_version_outside_git_is_none(monkeypatch):
+    launcher.code_version.cache_clear()
+    monkeypatch.setattr(launcher, "ROOT", "/")      # not a git checkout
+    monkeypatch.setattr(launcher.subprocess, "run",
+                        lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("git")))
+    try:
+        assert launcher.code_version() == {"commit": None, "dirty": None}
+    finally:
+        launcher.code_version.cache_clear()
+
+
+def test_version_warnings():
+    clean = [{"run_id": "a", "commit": "c1", "dirty": False},
+             {"run_id": "b", "commit": "c1", "dirty": False}]
+    assert launcher.version_warnings(clean) == []
+    mixed = launcher.version_warnings(clean + [{"run_id": "c", "commit": "c2", "dirty": False}])
+    assert len(mixed) == 1 and "2 commits" in mixed[0]
+    dirty = launcher.version_warnings([{"run_id": "a", "commit": "c1", "dirty": True}])
+    assert len(dirty) == 1 and "uncommitted" in dirty[0] and "e.g. a" in dirty[0]
+
+
 def test_centralized_run_is_renamed_after_r4_logs_past_env_run(tmp_path, grid_world):
     """R4's runner logs after env.run(); the log must still be released so the
     .part file can be renamed (Windows refuses to rename an open file)."""

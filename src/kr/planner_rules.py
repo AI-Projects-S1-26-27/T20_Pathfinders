@@ -245,5 +245,6 @@ LARGE_VEHICLE_CLASSES = sorted(
 #   TODO(R7): in AgentPlanner.register, build the agent on rules.view(self.env.world, vehicle)
 #             and, when stops is None, use priority_stops(vehicle, orders, travel, t)[0].
 #   TODO(R4): WorldTravel(rules.view(world, vehicle), now), or rules.cost_fn for its graph.
-#   TODO(R1): build RoadRules(world.graph(), zones_from_config(cfg)) in run.py and pass it to
-#             the planners; events._emit_new_order -> OrderSampler.generate_order (Week 2).
+#   R1 (W7): not wired in run.py, since no config restricts a road and the planners above take no
+#             rules yet; new_order events do not call OrderSampler.generate_order. Both are
+#             recorded as known limitations in docs/DECISIONS.md.

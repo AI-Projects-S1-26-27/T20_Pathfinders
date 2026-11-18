@@ -105,8 +105,9 @@ class OrderSampler:
     """Holds the map zones and distributions; makes one order at a time or a whole scenario.
 
     The same sampler serves the start-of-run orders (generate) and single orders arriving during the
-    run (generate_order). TODO(R1): call generate_order(self.rng, t) in events._emit_new_order and
-    pass the result to env.add_order().
+    run (generate_order). The simulator does not call generate_order for D11's new_order events
+    (it would need the Amazon profile on every machine): see docs/DECISIONS.md, "Dynamic Orders in
+    Simulated Runs" (R1, W7).
     """
 
     def __init__(

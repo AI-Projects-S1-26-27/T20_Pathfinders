@@ -29,7 +29,7 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 
 | event | agent_id | payload |
 |-------|----------|---------|
-| `sim_start` | env | `{"start_time_s", "duration_seconds", "n_vehicles", "n_orders", "predictor": bool}` (`predictor`: R6's forecast was available to planners) |
+| `sim_start` | env | `{"start_time_s", "duration_seconds", "n_vehicles", "n_orders", "predictor": bool, "traffic": bool, "traffic_day": int \| null}` (`predictor`: R6's forecast was available to planners; `traffic`: R6's traffic model loaded, false = free-flow roads; `traffic_day`: R6's test-period day offset, config `traffic_day`, null without a traffic model; W7) |
 | `edge_enter` | vehicle | `{"edge": [u, v, key], "expected_duration": float s}` (time fixed on entry) |
 | `edge_exit` | vehicle | `{"node": int}` (node just reached) |
 | `blocked_wait` | vehicle | `{"edge": [u, v, key]}` logged every 60 s while the next road is closed |
@@ -58,7 +58,8 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 
 `python -m src.sim.check_log <log> [--config <cfg>]` (R1, W6) checks a log against this page:
 keys, one `sim_start`/`sim_complete`, time order, each order ending once with a reason listed
-above, counts, and edge enter/exit pairs. In centralized mode R4's runner also writes
+above, `node` and `demand` on every `order_delivered` row (W7; with `--config`, also equal to the
+order's), counts, and edge enter/exit pairs. In centralized mode R4's runner also writes
 `central_state_report`, `central_plan_broadcast` and, after `sim_complete`, `allocation_summary`
 (not yet described here: TODO(R4)).
 
