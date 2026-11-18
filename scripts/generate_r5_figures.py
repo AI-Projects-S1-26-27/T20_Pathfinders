@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import replace
+import json
 from pathlib import Path
+import sys
 from typing import Dict
 
-import matplotlib
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import matplotlib  # noqa: E402
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -259,7 +264,7 @@ def generate_f8_sensitivity_and_summary(
 
     axes[0].set_ylabel("Mean Negotiation Messages")
     axes[0].set_title("Negotiation Messages vs. Horizon tau")
-    axes[0].legend(loc="upper left")
+    axes[0].legend(loc="lower right")
 
     axes[1].set_ylabel("Mean Unresolved Overlaps (delta_t = 0s)")
     axes[1].set_title("Unresolved Conflicts vs. Horizon tau")
