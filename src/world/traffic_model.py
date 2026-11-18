@@ -10,7 +10,6 @@ Assumptions (state them in the report):
 """
 import numpy as np
 import pandas as pd
-from src.prediction.data_prep import prepare_ratio
 from src.world.edge_table import load_edge_table
 
 STEP_S = 300
@@ -55,6 +54,7 @@ class TrafficModel:
     def __init__(self, edges, road_classes, zone_of_edge, seed=42):
         self.edges = list(edges)
         self.edge_index = {e: i for i, e in enumerate(self.edges)}
+        from src.prediction.data_prep import prepare_ratio  # lazy: needs h5py
         ratio, train, val, test = prepare_ratio()
         rng = np.random.default_rng(seed)
         groups = sensor_groups(train)
