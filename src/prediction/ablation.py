@@ -10,12 +10,17 @@ from src.sim.run import assign_orders, build_order, build_vehicle
 from src.sim.world import DEFAULT_MAP_PATH, World
 
 
-def run_one(config, run_id, on, rate, seed, log_dir):
+def run_one(config, run_id, on, rate, seed, log_dir, vary_day=False):
     cfg = copy.deepcopy(config)
     cfg.update(run_id=run_id, mode="independent", seed=seed,
                disruption_rate_per_hour=float(rate),
                log_path=str(log_dir / f"{run_id}.jsonl"))
-    world = World.from_defaults(cfg.get("map_path", DEFAULT_MAP_PATH), seed=seed)
+    day = 0
+    if vary_day:
+        from src.world.traffic_model import day_for_seed
+        day = day_for_seed(seed)
+    world = World.from_defaults(cfg.get("map_path", DEFAULT_MAP_PATH),
+                                seed=seed, day_offset=day)
     if on:
         assert world.predictor is not None, "predictor failed to load"
     else:
@@ -58,6 +63,8 @@ def main():
     ap.add_argument("--config", default="configs/viz_demo.yaml")
     ap.add_argument("--rates", type=float, nargs="+", default=[10.0])
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--vary-day", action="store_true",
+                    help="each seed uses a different weekday of the test table")
     a = ap.parse_args()
     config = yaml.safe_load(open(a.config))
     log_dir = Path("logs"); log_dir.mkdir(exist_ok=True)
@@ -67,11 +74,13 @@ def main():
             seed = 9001 + k
             for on in (True, False):
                 tag = "on" if on else "off"
-                m = run_one(config, f"abl_{tag}_r{rate:g}_s{seed}", on, rate, seed, log_dir)
+                m = run_one(config, f"abl_{tag}_r{rate:g}_s{seed}", on, rate, seed, log_dir,
+                            vary_day=a.vary_day)
                 out.append({"rate": rate, "seed": seed, "predictor": tag, **m})
                 print(out[-1], flush=True)
     df = pd.DataFrame(out)
-    df.to_csv("reports/ablation_predictor_pilot.csv", index=False)
+    df.to_csv("reports/ablation_predictor_pilot%s.csv"
+              % ("_varyday" if a.vary_day else ""), index=False)
     for rate, g in df.groupby("rate"):
         on = g[g.predictor == "on"].set_index("seed"); off = g[g.predictor == "off"].set_index("seed")
         for col in ("mean_delivery_s", "on_time_rate", "delivered"):

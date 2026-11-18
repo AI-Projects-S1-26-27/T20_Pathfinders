@@ -204,7 +204,8 @@ class World:
     # Construction
     # ------------------------------------------------------------------
     @classmethod
-    def from_defaults(cls, map_path: str = DEFAULT_MAP_PATH, seed: int = 42) -> "World":
+    def from_defaults(cls, map_path: str = DEFAULT_MAP_PATH, seed: int = 42,
+                      day_offset: int = 0) -> "World":
         """Real Secunderabad graph plus R6 traffic model when available."""
         from src.world.graph_loader import load_road_graph
 
@@ -214,7 +215,7 @@ class World:
         predictor: Optional[object] = None
         try:
             from src.world.traffic_model import TrafficModel
-            traffic_model = TrafficModel.from_graph(map_path, seed=seed)
+            traffic_model = TrafficModel.from_graph(map_path, seed=seed, day_offset=day_offset)
         except (ImportError, FileNotFoundError) as e:
             logger.warning("Traffic model unavailable, using free-flow times: %s", e)
         if traffic_model is not None:
