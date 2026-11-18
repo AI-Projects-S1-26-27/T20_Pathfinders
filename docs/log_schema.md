@@ -81,3 +81,13 @@ Written only when an `AgentPlanner` is attached (modes `independent` and `full`)
 | `allocation` | vehicle / `manager` | R4's contract-net message (D7), one row per message: `{"phase": "announcement" \| "bid" \| "award", "recipient", "order_id", "sender"?, "cost"?}`. Independent/full with `allocation: contract_net` (R1's `src/sim/dispatch.py`) |
 | `allocation_complete` | env | One per contract-net auction: `{"cpu_seconds", "messages", "mode", "order_id", "winner": vehicle_id \| null}` (R4's centralized runner logs the same event per re-solve, without `order_id`/`winner`) |
 | `replan_summary` | env | End of run (`planner.finish()`): `{"mode", "trigger_enabled", "replans", "replans_kept", "replan_cpu_seconds", "kept_cpu_seconds", "agent_cpu_seconds", "coordination_cpu_seconds", "hook_errors", "ignored_events", "negotiation_calls", "negotiation_messages", "yields", "failed_unreachable": [order_id], "reassigned": [order_id], "unreachable_stops": {vehicle_id: [node]}, "min_gain_s", "min_gain_frac"}`. `replan_cpu_seconds` sums `replan` rows only (since W6; W4/W5 summed every check, now `agent_cpu_seconds`) |
+
+## Events from R3's knowledge base (`src/kr/planner_rules.py`)
+
+Written by `log_kr_trace(sink, t, vehicle_id, result, context)` wherever a planner runs R3's feasibility
+engine. No module calls it in simulated runs yet (see `docs/kr_planner_integration.md`), so current logs
+have no `kr_check` rows.
+
+| event | agent_id | payload |
+|-------|----------|---------|
+| `kr_check` | vehicle | `{"feasible": bool, "violated": [rule], "sequence": [order_id], "trace": [str], "context": str}`. One feasibility check of a vehicle's orders: `violated` = rule ids that failed (e.g. `KR-10`), `sequence` = order ids in the engine's KR-13 priority order (empty when `feasible` is false), `trace` = the engine's explanation lines, `context` = free text from the caller (where the check was made) |

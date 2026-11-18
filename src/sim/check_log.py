@@ -42,6 +42,8 @@ KNOWN_EVENTS = {
     # R4 allocation (contract-net and centralized runner)
     "allocation", "allocation_complete", "allocation_summary",
     "central_state_report", "central_plan_broadcast",
+    # R3 knowledge base (src/kr/planner_rules.py, log_kr_trace)
+    "kr_check",
 }
 FAIL_REASONS = {
     "time_window_missed", "invalid_time_window", "capacity_exceeded_unservable",

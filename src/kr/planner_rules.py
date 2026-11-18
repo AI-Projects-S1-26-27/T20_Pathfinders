@@ -200,7 +200,7 @@ def log_kr_trace(sink, t: float, vehicle_id: str, result: dict, context: str = "
     """Write one "kr_check" row through R1's env.log_event / logger.log (same JSONL rows).
 
     sink: R1's DeliverySimEnvironment (log_event), R4's sim runner (log_event) or a MetricsLogger.
-    TODO(R1): add "kr_check" to docs/log_schema.md (agent_id = vehicle).
+    The row is described in docs/log_schema.md (agent_id = vehicle).
     """
     payload = {
         "feasible": bool(result["feasible"]),
