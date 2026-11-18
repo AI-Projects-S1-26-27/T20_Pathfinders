@@ -269,6 +269,8 @@
    308960209,
    3221217088
   ],
+  "depots_n": 3,
+  "order_nodes": 600,
   "large_network_nodes": 675,
   "graph_nodes": 2377,
   "depot_order_trips": 1800,
@@ -280,6 +282,11 @@
   "mean_detour_pct": 3.0,
   "mean_detour_when_longer_pct": 27.6,
   "edges_blocked_for_large": 4922,
+  "edges_blocked_by_class": {
+   "living_street": 120,
+   "residential": 4800,
+   "unclassified": 2
+  },
   "edges_total": 6056
  },
  "part_b2": [
@@ -501,6 +508,206 @@
    "replans_changed_by_spike": 1,
    "blocked_waits": 0,
    "capacity_blocked_at_delivery": 103,
+   "audit_violations": 0
+  }
+ ],
+ "part_b2_contract_net": [
+  {
+   "scenario": "small_uniform_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "small_clustered_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "small_hotspot_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "medium_uniform_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "medium_clustered_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "medium_hotspot_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "large_uniform_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "large_clustered_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
+   "audit_violations": 0
+  },
+  {
+   "scenario": "large_hotspot_s0",
+   "closures": 7,
+   "closure_ids": [
+    "2622294444-308952077",
+    "2855063448-1357417824",
+    "2855064257-2855045256",
+    "2859484147-2859484137",
+    "308960178-3207276430",
+    "321712283-321712155",
+    "3674681100-2240857557"
+   ],
+   "changed_closure_ids": [],
+   "traffic_spikes": 15,
+   "closures_that_changed_a_route": 0,
+   "replans_changed_by_closure": 0,
+   "replans_kept_after_closure": 0,
+   "replans_changed_by_spike": 0,
+   "blocked_waits": 0,
+   "capacity_blocked_at_delivery": 0,
    "audit_violations": 0
   }
  ]

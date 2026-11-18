@@ -1,0 +1,10 @@
+# R3 Week 7 audit pilot, centralized part: written into the same folder as r3_audit_pilot.yaml
+# so one audit covers all three modes. Small scenarios only: one centralized run took ~290 s on
+# small_uniform_s0, against ~23 min for 11 of 240 simulated minutes on a large one (R1, Week 5).
+sweep_id: r3_audit_pilot_central
+configs: [configs/scenarios/small_*_s0.yaml]
+modes: [centralized]
+seeds: [9001, 9002]
+rates: [10.0]
+out_dir: runs/r3_audit_pilot
+workers: 2
