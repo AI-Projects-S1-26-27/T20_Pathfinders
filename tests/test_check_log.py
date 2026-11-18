@@ -68,6 +68,31 @@ def test_broken_log_is_caught(change, message):
     assert any(message in e for e in errors), errors
 
 
+@pytest.mark.parametrize("drop", ["node", "demand"])
+def test_delivered_row_without_node_or_demand_is_an_error(drop):
+    """W7: every order_delivered row carries node and demand (R4's centralized
+    rows did not before PR #51; the audit and replay need them)."""
+    errors = errors_of(broken(lambda r: r[3]["payload"].pop(drop)))
+    assert any("order_delivered row(s) without" in e and f"no {drop}" in e for e in errors), errors
+
+
+def test_delivered_row_with_null_node_is_an_error():
+    errors = errors_of(broken(lambda r: r[3]["payload"].update(node=None)))
+    assert any("without node / demand" in e for e in errors), errors
+
+
+def test_delivery_at_another_node_than_the_config_order_is_an_error():
+    errors = errors_of(broken(lambda r: r[3]["payload"].update(node=9)), CONFIG)
+    assert any("disagree with the config" in e and "node 9 vs 1" in e for e in errors), errors
+
+
+def test_delivery_demand_differs_from_the_config_order():
+    config = copy.deepcopy(CONFIG)
+    config["orders"][0]["demand"] = 3.0
+    errors = errors_of(good_log(), config)
+    assert any("demand 1.0 vs 3.0" in e for e in errors), errors
+
+
 def test_config_order_never_ended():
     rows = broken(lambda r: (r.pop(5), r[-1]["payload"].update(failed=0)))
     errors = errors_of(rows, CONFIG)

@@ -200,7 +200,7 @@ def log_kr_trace(sink, t: float, vehicle_id: str, result: dict, context: str = "
     """Write one "kr_check" row through R1's env.log_event / logger.log (same JSONL rows).
 
     sink: R1's DeliverySimEnvironment (log_event), R4's sim runner (log_event) or a MetricsLogger.
-    TODO(R1): add "kr_check" to docs/log_schema.md (agent_id = vehicle).
+    The row is described in docs/log_schema.md (agent_id = vehicle).
     """
     payload = {
         "feasible": bool(result["feasible"]),
@@ -245,5 +245,6 @@ LARGE_VEHICLE_CLASSES = sorted(
 #   TODO(R7): in AgentPlanner.register, build the agent on rules.view(self.env.world, vehicle)
 #             and, when stops is None, use priority_stops(vehicle, orders, travel, t)[0].
 #   TODO(R4): WorldTravel(rules.view(world, vehicle), now), or rules.cost_fn for its graph.
-#   TODO(R1): build RoadRules(world.graph(), zones_from_config(cfg)) in run.py and pass it to
-#             the planners; events._emit_new_order -> OrderSampler.generate_order (Week 2).
+#   R1 (W7): not wired in run.py, since no config restricts a road and the planners above take no
+#             rules yet; new_order events do not call OrderSampler.generate_order. Both are
+#             recorded as known limitations in docs/DECISIONS.md.

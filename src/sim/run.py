@@ -50,6 +50,39 @@ def _block(config: Dict[str, Any], name: str, defaults: Dict[str, Any]) -> Dict[
     return {**defaults, **block}
 
 
+def traffic_day_of(config: Dict[str, Any]) -> int:
+    """R6's test-period day the traffic starts on (``traffic_day``, D10/W7).
+
+    0 (default) = 5 June 2012, as before; an int = that day offset;
+    ``per_seed`` = R6's day_for_seed(seed): a weekday per seed, skipping the
+    day with no data. The range is checked by R6's TrafficModel.
+    """
+    day = config.get("traffic_day", 0)
+    if day == "per_seed":
+        from src.world.traffic_model import day_for_seed
+        return int(day_for_seed(int(config.get("seed", 42))))
+    if isinstance(day, bool) or not isinstance(day, int) or day < 0:
+        raise ValueError(f"traffic_day must be a day offset >= 0 or 'per_seed', got {day!r}")
+    return day
+
+
+def check_traffic_loaded(world, use_predictor: bool) -> None:
+    """``require_traffic: true``: fail instead of running on free-flow times.
+
+    Without data/raw/metr-la.h5 (or torch / h5py) World.from_defaults only
+    logs a warning and every road runs at free-flow speed, so a sweep would
+    finish normally with no traffic in it.
+    """
+    if getattr(world, "traffic_model", None) is None:
+        raise RuntimeError(
+            "require_traffic: R6's traffic model did not load (needs data/raw/metr-la.h5 "
+            "and h5py); refusing to run on free-flow times")
+    if use_predictor and getattr(world, "predictor", None) is None:
+        raise RuntimeError(
+            "require_traffic: R6's predictor did not load (needs torch and "
+            "models/lstm_v1.pt); set predictor: false to run without it")
+
+
 def build_vehicle(cfg: Dict[str, Any]) -> Vehicle:
     route = [int(n) for n in cfg.get("route", [])]
     depot = int(cfg["depot_node"])
@@ -100,9 +133,18 @@ def build_simulation(config: Dict[str, Any], world=None) -> Tuple[Any, Optional[
     use_predictor = config.get("predictor", True)
     if not isinstance(use_predictor, bool):
         raise ValueError(f"predictor must be true or false, got {use_predictor!r}")
+    require_traffic = config.get("require_traffic", False)
+    if not isinstance(require_traffic, bool):
+        raise ValueError(f"require_traffic must be true or false, got {require_traffic!r}")
+    day = traffic_day_of(config)
     if world is None:
         map_path = config.get("map_path", DEFAULT_MAP_PATH)
-        world = World.from_defaults(map_path, seed=int(config.get("seed", 42)))
+        world = World.from_defaults(map_path, seed=int(config.get("seed", 42)), day_offset=day)
+    elif day != 0:
+        raise ValueError("traffic_day only applies when run.py builds the world "
+                         "(no world= argument)")
+    if require_traffic:
+        check_traffic_loaded(world, use_predictor)
     if not use_predictor:
         world.predictor = None    # R6 ablation: plan on free-flow, not forecasts
 

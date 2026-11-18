@@ -42,6 +42,8 @@ KNOWN_EVENTS = {
     # R4 allocation (contract-net and centralized runner)
     "allocation", "allocation_complete", "allocation_summary",
     "central_state_report", "central_plan_broadcast",
+    # R3 knowledge base (src/kr/planner_rules.py, log_kr_trace)
+    "kr_check",
 }
 FAIL_REASONS = {
     "time_window_missed", "invalid_time_window", "capacity_exceeded_unservable",
@@ -49,6 +51,9 @@ FAIL_REASONS = {
     # R4's centralized runner (src/allocation/runtime.py, sim_runner.py)
     "central_unassigned", "service_infeasible",
 }
+# Payload keys every order_delivered row must carry (docs/log_schema.md). R1's
+# environment always wrote them; R4's centralized runner since PR #51 (W7).
+DELIVERED_KEYS = ("node", "demand")
 # Rows allowed after sim_complete. TODO(R4): log allocation_summary before
 # sim_complete (env.add_finisher), then this can be empty.
 AFTER_COMPLETE = {"allocation_summary"}
@@ -114,6 +119,8 @@ def check_rows(rows: List[Dict[str, Any]],
     # -- orders --
     ended: Dict[str, str] = {}
     n_delivered = n_failed = 0
+    incomplete: List[str] = []          # order_delivered rows without node / demand
+    delivered_at: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         if r["event"] not in ("order_delivered", "order_failed"):
             continue
@@ -124,11 +131,19 @@ def check_rows(rows: List[Dict[str, Any]],
         ended[oid] = r["event"]
         if r["event"] == "order_delivered":
             n_delivered += 1
+            missing_keys = [k for k in DELIVERED_KEYS if r["payload"].get(k) is None]
+            if missing_keys:
+                incomplete.append(f"{oid} (no {', '.join(missing_keys)})")
+            else:
+                delivered_at[oid] = r["payload"]
         else:
             n_failed += 1
             reason = r["payload"].get("reason")
             if reason not in FAIL_REASONS:
                 errors.append(f"order {oid} failed with unknown reason {reason!r}")
+    if incomplete:
+        errors.append(f"{len(incomplete)} order_delivered row(s) without "
+                      f"{' / '.join(DELIVERED_KEYS)} (docs/log_schema.md), e.g. {incomplete[0]}")
     done = [r for r in rows if r["event"] == "sim_complete"]
     if done:
         p = done[0]["payload"]
@@ -146,6 +161,16 @@ def check_rows(rows: List[Dict[str, Any]],
         strangers = sorted(set(ended) - known)
         if strangers:
             errors.append(f"orders not in the config: {strangers[:10]}")
+        # a delivery must be at the order's node, with the order's demand
+        by_id = {str(o["id"]): o for o in config.get("orders", [])}
+        wrong = [f"{oid} (node {p['node']} vs {by_id[oid]['node']}, demand {p['demand']} vs "
+                 f"{by_id[oid].get('demand')})"
+                 for oid, p in delivered_at.items() if oid in by_id
+                 and (int(p["node"]) != int(by_id[oid]["node"])
+                      or float(p["demand"]) != float(by_id[oid].get("demand", p["demand"])))]
+        if wrong:
+            errors.append(f"{len(wrong)} delivery row(s) disagree with the config's order, "
+                          f"e.g. {wrong[0]}")
 
     # -- vehicles: enter a road, leave it at its end node, then the next one --
     on_edge: Dict[str, Any] = {}
