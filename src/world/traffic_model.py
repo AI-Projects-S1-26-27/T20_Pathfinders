@@ -10,7 +10,6 @@ Assumptions (state them in the report):
 """
 import numpy as np
 import pandas as pd
-from src.prediction.data_prep import prepare_ratio
 from src.world.edge_table import load_edge_table
 
 STEP_S = 300
@@ -31,10 +30,31 @@ def sensor_groups(train):
     return {"mild": order[:k], "medium": order[k:2 * k], "strong": order[2 * k:]}
 
 
+TABLE_DAYS = 23   # test-period days after SIM_START
+
+
+def weekday_offsets(n_days=TABLE_DAYS):
+    """Day offsets (0 = SIM_START) that fall on a weekday (Mon-Fri)."""
+    d0 = pd.Timestamp(SIM_START).dayofweek
+    return [d for d in range(n_days) if (d0 + d) % 7 < 5]
+
+
+# Offsets whose 06:00-10:00 window is mostly missing in METR-LA (measured:
+# offset 13 = 2012-06-18 is 100% missing, all others under 11%).
+BAD_DAYS = {13}
+
+
+def day_for_seed(seed, n_days=TABLE_DAYS):
+    """Weekday offset for a seed, skipping BAD_DAYS. One shared rule."""
+    offs = [d for d in weekday_offsets(n_days) if d not in BAD_DAYS]
+    return offs[int(seed) % len(offs)]
+
+
 class TrafficModel:
     def __init__(self, edges, road_classes, zone_of_edge, seed=42):
         self.edges = list(edges)
         self.edge_index = {e: i for i, e in enumerate(self.edges)}
+        from src.prediction.data_prep import prepare_ratio  # lazy: needs h5py
         ratio, train, val, test = prepare_ratio()
         rng = np.random.default_rng(seed)
         groups = sensor_groups(train)
@@ -66,10 +86,22 @@ class TrafficModel:
         self.mult = np.clip(1.0 / ratios, 1.0, MAX_MULT).astype(np.float32)
 
     @classmethod
-    def from_graph(cls, path="data/processed/secunderabad.graphml", seed=42):
+    def from_graph(cls, path="data/processed/secunderabad.graphml", seed=42,
+                   day_offset=0):
+        """day_offset: start the clock on test-period day N (0 = default).
+
+        The table wraps, so day_offset plus the simulated days must not
+        exceed n_days. Raises ValueError unless 0 <= day_offset < n_days.
+        """
         edges, classes, zones = load_edge_table(path)
         m = cls(edges, classes, zones, seed)
         m.road_classes = classes
+        m.n_days = m.n_steps // 288
+        if not 0 <= int(day_offset) < m.n_days:
+            raise ValueError("day_offset must be in [0, %d)" % m.n_days)
+        m.day_offset = int(day_offset)
+        if m.day_offset:
+            m.mult = np.roll(m.mult, -m.day_offset * 288, axis=1)
         return m
 
     def actual_multiplier(self, edge_idx, t_seconds):
