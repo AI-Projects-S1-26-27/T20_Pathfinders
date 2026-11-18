@@ -29,7 +29,7 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 
 | event | agent_id | payload |
 |-------|----------|---------|
-| `sim_start` | env | `{"start_time_s", "duration_seconds", "n_vehicles", "n_orders", "predictor": bool}` (`predictor`: R6's forecast was available to planners) |
+| `sim_start` | env | `{"start_time_s", "duration_seconds", "n_vehicles", "n_orders", "predictor": bool, "traffic": bool, "traffic_day": int \| null}` (`predictor`: R6's forecast was available to planners; `traffic`: R6's traffic model loaded, false = free-flow roads; `traffic_day`: R6's test-period day offset, config `traffic_day`, null without a traffic model; W7) |
 | `edge_enter` | vehicle | `{"edge": [u, v, key], "expected_duration": float s}` (time fixed on entry) |
 | `edge_exit` | vehicle | `{"node": int}` (node just reached) |
 | `blocked_wait` | vehicle | `{"edge": [u, v, key]}` logged every 60 s while the next road is closed |
@@ -58,7 +58,8 @@ Edges are `[u, v, key]` (OSM node ids, key of the road actually used).
 
 `python -m src.sim.check_log <log> [--config <cfg>]` (R1, W6) checks a log against this page:
 keys, one `sim_start`/`sim_complete`, time order, each order ending once with a reason listed
-above, counts, and edge enter/exit pairs. In centralized mode R4's runner also writes
+above, `node` and `demand` on every `order_delivered` row (W7; with `--config`, also equal to the
+order's), counts, and edge enter/exit pairs. In centralized mode R4's runner also writes
 `central_state_report`, `central_plan_broadcast` and, after `sim_complete`, `allocation_summary`
 (not yet described here: TODO(R4)).
 
@@ -81,3 +82,13 @@ Written only when an `AgentPlanner` is attached (modes `independent` and `full`)
 | `allocation` | vehicle / `manager` | R4's contract-net message (D7), one row per message: `{"phase": "announcement" \| "bid" \| "award", "recipient", "order_id", "sender"?, "cost"?}`. Independent/full with `allocation: contract_net` (R1's `src/sim/dispatch.py`) |
 | `allocation_complete` | env | One per contract-net auction: `{"cpu_seconds", "messages", "mode", "order_id", "winner": vehicle_id \| null}` (R4's centralized runner logs the same event per re-solve, without `order_id`/`winner`) |
 | `replan_summary` | env | End of run (`planner.finish()`): `{"mode", "trigger_enabled", "replans", "replans_kept", "replan_cpu_seconds", "kept_cpu_seconds", "agent_cpu_seconds", "coordination_cpu_seconds", "hook_errors", "ignored_events", "negotiation_calls", "negotiation_messages", "yields", "failed_unreachable": [order_id], "reassigned": [order_id], "unreachable_stops": {vehicle_id: [node]}, "min_gain_s", "min_gain_frac"}`. `replan_cpu_seconds` sums `replan` rows only (since W6; W4/W5 summed every check, now `agent_cpu_seconds`) |
+
+## Events from R3's knowledge base (`src/kr/planner_rules.py`)
+
+Written by `log_kr_trace(sink, t, vehicle_id, result, context)` wherever a planner runs R3's feasibility
+engine. No module calls it in simulated runs yet (see `docs/kr_planner_integration.md`), so current logs
+have no `kr_check` rows.
+
+| event | agent_id | payload |
+|-------|----------|---------|
+| `kr_check` | vehicle | `{"feasible": bool, "violated": [rule], "sequence": [order_id], "trace": [str], "context": str}`. One feasibility check of a vehicle's orders: `violated` = rule ids that failed (e.g. `KR-10`), `sequence` = order ids in the engine's KR-13 priority order (empty when `feasible` is false), `trace` = the engine's explanation lines, `context` = free text from the caller (where the check was made) |

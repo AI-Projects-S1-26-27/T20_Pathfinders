@@ -24,7 +24,9 @@ Output in out_dir:
   with a done marker for the same config hash is skipped on the next launch
   (resume). Change anything in its config and it runs again;
 * ``failed/<run_id>.txt``: traceback of a run that crashed (retried next launch);
-* ``results.csv``: one row per finished run, sorted by run_id.
+* ``results.csv``: one row per finished run, sorted by run_id, with the git
+  ``commit`` it ran on and ``dirty`` (uncommitted changes to tracked files);
+  the launcher warns if the rows mix commits or any run was dirty (W7).
 
 Seeds: a run is fully determined by its config (incl. seed), never by the
 worker it lands on or by the order runs finish in.
@@ -32,6 +34,7 @@ worker it lands on or by the order runs finish in.
 import argparse
 import copy
 import csv
+import functools
 import glob
 import hashlib
 import itertools
@@ -39,6 +42,7 @@ import json
 import logging
 import multiprocessing
 import os
+import subprocess
 import time
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -54,7 +58,23 @@ from src.sim.run import MODES
 SWEEP_KEYS = {"sweep_id", "configs", "modes", "seeds", "rates", "predictor",
               "overrides", "out_dir", "workers"}
 RESULT_COLUMNS = (["run_id", "scenario", "seed", "rate", "predictor", "status"]
-                  + METRIC_COLUMNS + ["log_errors", "config_hash", "log"])
+                  + METRIC_COLUMNS + ["log_errors", "config_hash", "commit", "dirty", "log"])
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@functools.lru_cache(maxsize=1)
+def code_version() -> Dict[str, Any]:
+    """The git commit the runs execute (W7), so every result says which code
+    made it. ``dirty``: tracked files differ from that commit, so the commit
+    alone does not reproduce the run. Both None outside a git checkout."""
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True,
+                              check=True, timeout=30).stdout.strip()
+    try:
+        return {"commit": git("rev-parse", "HEAD"),
+                "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
+    except (OSError, subprocess.SubprocessError):
+        return {"commit": None, "dirty": None}
 
 
 @dataclass(frozen=True)
@@ -196,7 +216,7 @@ def execute(spec: RunSpec) -> Dict[str, Any]:
         # W6: R1's log checker; errors are kept in the done marker, counted in results.csv
         log_errors, _ = check_rows(rows, config)
         row = {**base, **metrics, "status": "done", "log_errors": len(log_errors),
-               "config_hash": digest, "log": paths["log"]}
+               "config_hash": digest, **code_version(), "log": paths["log"]}
         if log_errors:
             row["log_error_list"] = log_errors[:20]
         _write_atomic(paths["done"], json.dumps(row, indent=1))
@@ -246,6 +266,22 @@ def collect_results(specs: List[RunSpec]) -> List[Dict[str, Any]]:
     return sorted(rows, key=lambda r: r["run_id"])
 
 
+def version_warnings(rows: List[Dict[str, Any]]) -> List[str]:
+    """Results that do not all come from one clean commit. A resumed sweep
+    skips finished runs even if the code changed since (the config hash does
+    not cover the code), so this is where mixed code shows up."""
+    out = []
+    commits = sorted({str(r.get("commit")) for r in rows})
+    if len(commits) > 1:
+        out.append(f"results come from {len(commits)} commits {commits}: the code changed "
+                   "between launches; delete out_dir/done/ to rerun everything on one commit")
+    dirty = [r["run_id"] for r in rows if r.get("dirty")]
+    if dirty:
+        out.append(f"{len(dirty)} run(s) ran with uncommitted changes to tracked files "
+                   f"(dirty), e.g. {dirty[0]}: commit first so the commit reproduces them")
+    return out
+
+
 def write_results(rows: List[Dict[str, Any]], path: str) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -276,6 +312,8 @@ def main() -> None:
     write_results(rows, os.path.join(out_dir, "results.csv"))
     failed = [r for r in results if r["status"] == "failed"]
     print(f"{len(rows)}/{len(specs)} runs done; results: {os.path.join(out_dir, 'results.csv')}")
+    for warning in version_warnings(rows):
+        print("WARNING: " + warning)
     flagged = [r["run_id"] for r in rows if r.get("log_errors")]
     if flagged:
         print(f"{len(flagged)} run(s) finished with log errors (log_errors column; details in "

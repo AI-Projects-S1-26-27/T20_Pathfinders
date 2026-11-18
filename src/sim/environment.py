@@ -280,6 +280,11 @@ class DeliverySimEnvironment:
             "n_orders": len(self.orders),
             # was R6's forecast available to planners (D10)? false = free-flow
             "predictor": getattr(self.world, "predictor", None) is not None,
+            # R6's traffic model loaded (false = free-flow roads) and its start
+            # day (traffic_day in run.py; null without a traffic model)
+            "traffic": getattr(self.world, "traffic_model", None) is not None,
+            "traffic_day": getattr(getattr(self.world, "traffic_model", None),
+                                   "day_offset", None),
         })
         for order in self.unassigned:     # no vehicle took it (e.g. config has no vehicles)
             self._fail(None, order, "no_vehicle")
