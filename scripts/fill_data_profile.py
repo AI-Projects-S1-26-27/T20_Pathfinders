@@ -19,12 +19,15 @@ import json
 import re
 from pathlib import Path
 
+SERVICE_KEY = "service"
 ROWS = [  # (label in the doc, key in summary.json, scale, decimals)
     ("Stops per route", "stops_per_route", 1, 0),
     ("Packages per stop", "packages_per_stop", 1, 1),
     ("Package volume (cm³)", "package_volume_cm3", 1, 0),
     ("Time-window width (h)", "tw_width_h", 1, 2),
-    ("Service time per stop (s)", "service_time_per_stop_s(sum)", 1, 0),
+    ("Service time per stop (s)", SERVICE_KEY, 1, 0),  # sum or max: see service_key()
+    # kept for comparison only: counts a stop's time once per package when it is repeated
+    ("Service time, sum over a stop's packages (s)", "service_time_per_stop_s(sum)", 1, 0),
     ("Capacity utilization", "capacity_utilization", 100, 1),  # shown in %
 ]
 QUANTILES = ["0.05", "0.25", "0.5", "0.75", "0.95", "mean"]
@@ -36,6 +39,23 @@ def fmt(x, decimals, scale=1):
         return "n/a"
     v = float(x) * scale
     return f"{v:,.{decimals}f}" + ("%" if scale == 100 else "")
+
+
+def service_key(per_stop: bool) -> str:
+    """The summary.json key for the "Service time per stop" row. It must be the column the
+    generator samples from (OrderSampler: service_max_s when Amazon repeats one service time on
+    every package of a stop, else service_sum_s); the sum would count a stop's time once per
+    package."""
+    return "service_time_per_stop_s(max)" if per_stop else "service_time_per_stop_s(sum)"
+
+
+def per_stop_service(packages_csv: Path) -> bool:
+    import pandas as pd
+
+    from src.data.orders_from_amazon import service_is_per_stop
+
+    P = pd.read_csv(packages_csv, usecols=["route_id", "stop_id", "service_s"])
+    return service_is_per_stop(P)
 
 
 def service_time_unit(packages_csv: Path) -> str:
@@ -63,7 +83,7 @@ def service_time_unit(packages_csv: Path) -> str:
     )
 
 
-def fill(doc: str, summary: dict, unit_answer: str) -> str:
+def fill(doc: str, summary: dict, unit_answer: str, per_stop: bool = False) -> str:
     n, total = summary["n_routes"], summary.get("n_routes_in_file")
     scope = "all" if total is None or n >= total else "subset"
     total_txt = "?" if total is None else f"{total:,}"
@@ -76,7 +96,7 @@ def fill(doc: str, summary: dict, unit_answer: str) -> str:
         flags=re.M,
     )
     for label, key, scale, dec in ROWS:
-        q = summary.get(key, {})
+        q = summary.get(service_key(per_stop) if key == SERVICE_KEY else key, {})
         cells = " | ".join(fmt(q.get(k), dec, scale) for k in QUANTILES)
         doc = re.sub(rf"^\| {re.escape(label)} \|.*$", f"| {label} | {cells} |", doc, flags=re.M)
     doc = re.sub(
@@ -133,7 +153,8 @@ def main(argv=None):
     summary = json.loads((prof / "summary.json").read_text(encoding="utf-8"))
     doc_path = Path(a.doc)
     original = doc_path.read_bytes()
-    new = fill(read_doc(doc_path), summary, service_time_unit(prof / "packages.csv"))
+    packages = prof / "packages.csv"
+    new = fill(read_doc(doc_path), summary, service_time_unit(packages), per_stop_service(packages))
     write_doc(doc_path, new, original)
     left = new.count("___")
     print(f"filled {doc_path} from {prof}/summary.json ({left} blanks left)")
