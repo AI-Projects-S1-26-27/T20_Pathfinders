@@ -130,10 +130,11 @@ are), and through the launcher's `results.csv`. Checked by hand as well, same ha
 from the run's seeded generator (`env.rng`, or a `random.Random(seed)` of your own), never from
 `random` / `np.random` module functions, and do not let the order of a `set` decide anything.
 
-**Not covered: R6's predictor.** Every test and hand run above used free-flow times (no METR-LA
-data or torch on the machines used), so runs with the traffic model / predictor on are not shown
-to be deterministic yet. To check (R6, with the real data): run one config with `predictor: true`
-twice and compare the logs without timing keys.
+**With R6's traffic model and predictor (W7).** `test_same_log_with_traffic_and_predictor` runs
+R3's `small_uniform_s7` (20 disruptions/h) with `predictor: true` in two processes with different
+`PYTHONHASHSEED`, in independent and full mode: the logs are identical. It needs
+`data/raw/metr-la.h5` and torch, so it is skipped in CI (no data there); run it on the machine
+that runs the sweep. Centralized mode with the predictor is not covered by it.
 
 **Log checker**: is a log complete and consistent?
 
@@ -164,7 +165,8 @@ Bug triage list for the final week: what is known not to work, or is not done, a
 | 5 | No depot unloading: load never decreases (`TODO(R4/R5)` in `environment.py`) | an order blocked by capacity can never be served later | R4/R5 (scope decision) |
 | 6 | **Known limitation (W7, `docs/DECISIONS.md` "KR Road Rules in Simulated Runs").** R3's `RoadRules` (KR-3/6) are not built in `run.py`: no config restricts any road and R7's / R4's planners take no rules (`TODO(R7)`, `TODO(R4)` in `src/kr/planner_rules.py`). `kr_check` is now in `docs/log_schema.md` | road-class / zone rules are checked in R3's log audit, not used in planning | closed (documented) |
 | 7 | `AgentPlanner.set_stops`: with `unreachable="wait"` the vehicle keeps its old route until the next disruption (R7: needs a `hold()` in R1's environment). The bare `KeyError` for an unknown vehicle id is fixed (R7, PR #50) | none with the defaults (contract-net uses `fail`) | R1 + R7 (not needed for the sweep) |
-| 8 | R6's clock convention not confirmed (`TODO(R6)` in `world.py`); predictor-on determinism not checked (above) | only matters with R6's data | R6 |
+| 8 | ~~R6's clock convention not confirmed; predictor-on determinism not checked~~ Done (W7): clock checked on METR-LA (`tests/test_traffic_clock.py`), runs with the predictor are deterministic in independent and full mode (above). Both tests need the data, so CI skips them | none | R1 for R6 |
+
 
 ## Files
 
@@ -274,7 +276,8 @@ Prints a `cProfile` table sorted by cumulative time.
 - **R7**: `ReplanningAgent.set_stops` / `AgentPlanner.set_stops` were added by R1 in W5 (modelled
   on `drop_stops`) so contract-net awards can change a running vehicle's stops; please review.
 - **R6 (traffic)**: `World.from_defaults` loads `TrafficModel` + `Predictor` when
-  available; `TODO(R6)` in `world.py` to confirm the clock convention.
+  available (with R6's `day_offset`); the clock convention is checked in
+  `tests/test_traffic_clock.py` (sim t in seconds from midnight, table step 0 = 00:00).
 - **R7 (triggers / re-routing)**: R7's `AgentPlanner` subscribes to `disruption` events and
   replans; a vehicle waiting at a closed road follows the new route as soon as the planner
   replaces it (W5; the old "wait at closures" `TODO(R7)` is done).

@@ -138,19 +138,69 @@ SUBPROCESS = (
 )
 
 
+def run_in_subprocess(code, hash_seed, tail_lines=40):
+    """Run code in a fresh Python with PYTHONHASHSEED=hash_seed. Output is
+    captured; if the run fails, its exit code and the end of its stderr
+    (the traceback) go into the test failure message."""
+    env = dict(os.environ, PYTHONHASHSEED=hash_seed)
+    proc = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env,
+                          capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0:
+        tail = "\n".join(proc.stderr.splitlines()[-tail_lines:])
+        pytest.fail(f"subprocess (PYTHONHASHSEED={hash_seed}) exited with "
+                    f"{proc.returncode}; last {tail_lines} lines of stderr:\n{tail}",
+                    pytrace=False)
+
+
 @pytest.mark.parametrize("mode", ["full", "centralized"])
 def test_same_log_across_processes_and_hash_seeds(tmp_path, mode):
     need(mode)
     logs = []
     for hash_seed in ("1", "2"):
         log = str(tmp_path / f"h{hash_seed}.jsonl")
-        env = dict(os.environ, PYTHONHASHSEED=hash_seed)
-        code = SUBPROCESS.format(tests=str(ROOT / "tests"), mode=mode, log=log)
-        subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, check=True,
-                       capture_output=True, timeout=600)
+        run_in_subprocess(SUBPROCESS.format(tests=str(ROOT / "tests"), mode=mode, log=log),
+                          hash_seed)
         logs.append(read(log))
     assert logs[0] == logs[1]
     assert events(logs[0], "disruption")
+
+
+# -- with R6's traffic model and predictor (real map, real data) -------------
+REAL_DATA = ROOT / "data" / "raw" / "metr-la.h5"
+REAL_SCENARIO = ROOT / "configs" / "scenarios" / "small_uniform_s7.yaml"
+REAL_SUBPROCESS = (
+    "import sys; sys.path.insert(0, {tests!r}); "
+    "from test_determinism import run_real; run_real({mode!r}, {log!r})"
+)
+
+
+def run_real(mode, log_path):
+    """R3's small_uniform_s7 at 20 disruptions/h, traffic model and predictor on."""
+    with open(REAL_SCENARIO, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    cfg.update(mode=mode, disruption_rate_per_hour=20.0, run_id=f"det_real_{mode}",
+               log_path=str(log_path), predictor=True)
+    return run_from_config(cfg)
+
+
+@pytest.mark.skipif(not REAL_DATA.exists() or not REAL_SCENARIO.exists(),
+                    reason="R6's METR-LA data or R3's scenario configs not present")
+@pytest.mark.parametrize("mode", ["independent", "full"])
+def test_same_log_with_traffic_and_predictor(tmp_path, mode):
+    """Same as above with R6's traffic model and LSTM predictor loaded, in two
+    processes with different PYTHONHASHSEED (as the launcher runs them)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("h5py")
+    logs = []
+    for hash_seed in ("1", "2"):
+        log = str(tmp_path / f"h{hash_seed}.jsonl")
+        run_in_subprocess(REAL_SUBPROCESS.format(tests=str(ROOT / "tests"), mode=mode, log=log),
+                          hash_seed)
+        logs.append(read(log))
+    assert logs[0] == logs[1]
+    start = events(logs[0], "sim_start")[0]["payload"]
+    assert start["predictor"] is True            # not vacuous: the forecast was used
+    assert events(logs[0], "disruption") and events(logs[0], "replan")
 
 
 # -- through the launcher ----------------------------------------------------
