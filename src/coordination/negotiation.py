@@ -78,6 +78,8 @@ def run_vickrey_auction(
 
     winner_budget = budgets.get(winner.vehicle_id)
 
+    # No eligible winner if top bidder cannot afford the second-highest bid
+    # or all bids are 0.
     if (
         winner_budget is None
         or winner_budget.credits < second_highest_bid

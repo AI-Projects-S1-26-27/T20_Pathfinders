@@ -55,6 +55,13 @@ is better, so the predictor uses it there. LSTM error peaks at 15:00-18:00 LA ti
 - The 08:00 start was chosen after seeing the 06:00 null; the final report should
   rerun on fresh seeds with a pre-fixed start time.
 
+## Ablation, day 1 vs varied weekdays (pilot, seeds 9001-9005, rate 10/h, 08:00 start)
+- Day 1 only (current code): off minus on = 37.6 s, 95% CI [20.7, 58.1].
+- Each seed on its own weekday (--vary-day): off minus on = 8.0 s, 95% CI [4.0, 11.9], about 0.8% of mean delivery time. Day 1 is a favourable morning.
+- On-time rate and delivered count are identical in both conditions.
+- 5 seeds, one rate; pilot only. The two tables must not be mixed.
+- Replan counts in these logs are 0 or 1 (replans_kept 0), so the gain is not explained by replans being logged; mechanism not yet established.
+
 ## Limitations
 - Trained on Los Angeles highway sensors; applied to Hyderabad roads by assumption
   (road class mapped to sensor group, LA peaks shifted +1 hour). Hyderabad accuracy
@@ -64,5 +71,5 @@ is better, so the predictor uses it there. LSTM error peaks at 15:00-18:00 LA ti
   not that it works on real roads.
 - It forecasts recurring congestion only, not closures or incidents.
 - Test period has more missing data (12.1%); gaps were forward-filled for inputs.
-- Currently all seeds read the same simulated morning (day 1 of the table).
+- Day coverage: the main sweep (run.py, launcher, demo_pair) still reads day 1 (5 June 2012) unless wired to use day_offset. Only `ablation.py --vary-day` gives each seed its own weekday (day_for_seed; offset 13 = 2012-06-18 excluded, 100% missing in 06:00-10:00; the exclusion was added after seeing results).
 - The 60-minute forecast is a sensor-group average, so it smooths single-edge jams.
