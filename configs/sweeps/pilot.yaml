@@ -1,0 +1,14 @@
+# R8 pilot sweep (plan W5): 3 modes x 3 disruption rates x 3 pilot seeds on one small scenario.
+# Pilot seeds 7-9 are never used in the main sweeps (they use 101 and up). Centralized only fits
+# on the small scenario (about 5 minutes per run), so the pilot is small-only.
+# Purpose: check that the metrics tell the modes apart and that the pre-registered thresholds
+# in docs/EXPERIMENT_PROTOCOL.md are testable. The thresholds were written on 29 Sep (plan
+# Section 7.3); the pilot may only clarify definitions, it must not be used to make them easier.
+sweep_id: pilot
+configs: ["configs/scenarios/small_uniform_s0.yaml"]
+modes: [independent, full, centralized]
+seeds: [7, 8, 9]
+rates: [0.0, 10.0, 20.0]
+predictor: [false]
+out_dir: runs/pilot
+workers: 2
