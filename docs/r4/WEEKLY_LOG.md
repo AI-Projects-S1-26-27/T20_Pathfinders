@@ -17,3 +17,7 @@ refer to the execution plan, not historical evidence of participation.
 - W6: failure/partial-capacity hardening, explicit defaults, measured pilot time-budget study with raw records, handoff and viva guide. Human review/teach-back and full-system R5/R7 integration are pending.
 
 - Follow-up: audited all visible roles against end-of-W6 criteria; corrected R3/R4 priority and result-shape compatibility; regenerated R4 pilot with tier 1 highest. Original weekly PRs retained as submitted; changes are in a separate follow-up PR.
+
+- W7: Authored formal report section (`docs/reports/r4_allocation_baseline.md`) covering course concepts, related work with verified citations, detailed CNP and OR-Tools CVRPTW partial-state mechanics, Table T2 solver time-budget analysis, and limitations. Ready for R8 synthesis into final submission report.
+
+- W8: Code cleanup and hardening; added boundary and stress tests in `tests/test_allocation_w7.py` (empty orders, capacity exhaustion drops, no-bidder auctions, deterministic tie-breaking, forward partial state); verified flake8 and pytest clean across all 34 allocation tests.
