@@ -112,12 +112,30 @@ def test_cli_writes_csv_and_figure(tmp_path, monkeypatch, capsys):
 
 
 def test_real_pilot_run(tmp_path):
-    """One real scenario through R1's run_from_config: the log it writes is read."""
+    """One real scenario through R1's run_from_config: the log it writes is read.
+
+    How many disruptions change a route depends on the traffic (R6's model and
+    predictor load only where data/raw/metr-la.h5 is present): this run has 1
+    disruption replan on free-flow and 0 with the predictor. So the test checks
+    that summarise_run agrees with the raw rows, not a number of replans. The
+    opening auction (contract-net) always gives vehicles their stops, so there
+    are new_order replans whatever the traffic.
+    """
     import os
     if not os.path.exists(os.path.join("configs", "scenarios", "small_uniform_s7.yaml")):
         pytest.skip("R3's scenario configs not present")
     paths = ra.make_pilot_logs(str(tmp_path), ["small_uniform"], [7], [20.0], ["independent"])
     (r,) = [ra.summarise_run(p) for p in paths]
     assert r["mode"] == "independent" and r["rate"] == 20.0 and r["complete"]
-    assert r["disruptions"] > 0 and r["disruption_replans"] >= 1
+
+    with open(paths[0], encoding="utf-8") as f:
+        rows = [json.loads(line) for line in f if line.strip()]
+    replans = [x["payload"] for x in rows if x["event"] == "replan"]
+    found = [p for p in replans if p["trigger"] in ra.DISRUPTION_TRIGGERS and p["route_found"]]
+    assert r["disruptions"] == sum(x["event"] == "disruption" for x in rows) > 0
+    assert r["disruption_replans"] == sum(p["trigger"] in ra.DISRUPTION_TRIGGERS
+                                          for p in replans)
+    assert r["new_order_replans"] == sum(p["trigger"] == "new_order" for p in replans) >= 1
+    assert r["lat_wall_ms"] == pytest.approx([p["wall_seconds"] * 1000 for p in found])
+    assert r["rebuild_wall_ms"] and all(x > 0 for x in r["rebuild_wall_ms"])
     assert all(x > 0 for x in r["lat_wall_ms"])

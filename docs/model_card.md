@@ -61,6 +61,7 @@ is better, so the predictor uses it there. LSTM error peaks at 15:00-18:00 LA ti
 - On-time rate and delivered count are identical in both conditions.
 - 5 seeds, one rate; pilot only. The two tables must not be mixed.
 - Replan counts in these logs are 0 or 1 (replans_kept 0), so the gain is not explained by replans being logged; mechanism not yet established.
+- Replan counts in `reports/ablation_predictor_pilot.csv` (13-57 per run) are not comparable with these: that file was made before R7's commit `cbd4082` (12 Nov), which logs a `replan` row only when a vehicle's route changes. Before it, any cost change on a watched road was logged as a replan even when the path stayed the same. Delivery times are unaffected (identical before and after `cbd4082` in R1's check, `docs/AI_USAGE_LOG.md` 18 Nov), so this file's delivery-time results and `ablation_bars.png` still hold; read its `replans` column as the old definition.
 
 ## Limitations
 - Trained on Los Angeles highway sensors; applied to Hyderabad roads by assumption

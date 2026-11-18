@@ -158,8 +158,10 @@ class World:
         """R6 ground-truth congestion multiplier, or 1.0 without a model."""
         if self.traffic_model is None:
             return 1.0
-        # TODO(R6): confirm TrafficModel expects absolute seconds from
-        # midnight (our clock) and that step 0 of its table is 00:00.
+        # Clock (checked W7 on METR-LA): t is absolute seconds from midnight
+        # (start_time_s + env.now); step 0 of R6's table is sim 00:00, which
+        # reads LA 23:00 the day before (+1 h shift). R6's Predictor uses the
+        # same clock. tests/test_traffic_clock.py checks both with the data.
         try:
             return float(
                 self.traffic_model.actual_multiplier_uv(str(u), str(v), t_seconds)
