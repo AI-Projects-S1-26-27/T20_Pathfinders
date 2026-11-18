@@ -39,3 +39,30 @@ def test_predictor_clock_follows_offset():
     assert p.t0 - base.t0 == pd.Timedelta(days=3)
     v = p.predict(0, 9 * 3600, 15)
     assert 1.0 <= v <= 6.0
+
+
+def test_range_check_and_day_for_seed():
+    from src.world.traffic_model import day_for_seed
+    with pytest.raises(ValueError):
+        TrafficModel.from_graph(day_offset=-1)
+    with pytest.raises(ValueError):
+        TrafficModel.from_graph(day_offset=23)
+    offs = weekday_offsets()
+    d0 = pd.Timestamp("2012-06-05").dayofweek
+    assert len(offs) == sum((d0 + d) % 7 < 5 for d in range(23))
+    for seed in range(40):
+        d = day_for_seed(seed)
+        assert d == day_for_seed(seed) and (d0 + d) % 7 < 5
+
+
+def test_weekday_feature_matches_clock():
+    for off in (0, 3):
+        p = Predictor(TrafficModel.from_graph(day_offset=off))
+        for step in (0, 150, 400):
+            ts = p.t0 + pd.Timedelta(minutes=5 * step)
+            assert round(p._features(step)[-1, 2] * 6) == ts.dayofweek
+
+
+def test_bad_day_never_chosen():
+    from src.world.traffic_model import BAD_DAYS, day_for_seed
+    assert all(day_for_seed(s) not in BAD_DAYS for s in range(200))

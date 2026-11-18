@@ -15,14 +15,12 @@ def run_one(config, run_id, on, rate, seed, log_dir, vary_day=False):
     cfg.update(run_id=run_id, mode="independent", seed=seed,
                disruption_rate_per_hour=float(rate),
                log_path=str(log_dir / f"{run_id}.jsonl"))
-    world = World.from_defaults(cfg.get("map_path", DEFAULT_MAP_PATH), seed=seed)
+    day = 0
     if vary_day:
-        from src.prediction.predictor import Predictor
-        from src.world.traffic_model import TrafficModel, weekday_offsets
-        offs = weekday_offsets()
-        world.traffic_model = TrafficModel.from_graph(
-            seed=seed, day_offset=offs[seed % len(offs)])
-        world.predictor = Predictor(world.traffic_model)
+        from src.world.traffic_model import day_for_seed
+        day = day_for_seed(seed)
+    world = World.from_defaults(cfg.get("map_path", DEFAULT_MAP_PATH),
+                                seed=seed, day_offset=day)
     if on:
         assert world.predictor is not None, "predictor failed to load"
     else:
