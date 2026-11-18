@@ -34,10 +34,10 @@ def run_vickrey_auction(
 ) -> Tuple[Optional[str], List[str], float]:
     """
     Vickrey Auction Primitive:
-    - Bids are delay costs. A vehicle cannot win if its credits are below
+- Bids are delay costs. A vehicle cannot win if its credits are below
       the price.
-    - Tie-breaking: lowest vehicle_id.
-    - Message counts (D7): 1 result message sent per involved vehicle.
+- Tie-breaking: lowest vehicle_id.
+- Message counts (D7): 1 result message sent per involved vehicle.
     """
     if not contesting_routes:
         return None, [], 0.0
@@ -78,8 +78,8 @@ def run_vickrey_auction(
 
     winner_budget = budgets.get(winner.vehicle_id)
 
-# No eligible winner if top bidder cannot afford the second-highest bid
-# or all bids are 0.
+    # No eligible winner if top bidder cannot afford the second-highest bid
+    # or all bids are 0.
     if (
         winner_budget is None
         or winner_budget.credits < second_highest_bid

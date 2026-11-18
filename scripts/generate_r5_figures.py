@@ -1,291 +1,332 @@
-"""Generate R5 Report Figures F5 & F8 and Export Sensitivity Results."""
+"""Generate R5 figures (F5 illustration, F8 sensitivity plots) and summary JSON."""
+
+from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
-import random
-from typing import Dict, Tuple
+from typing import Dict
 
-import matplotlib.pyplot as plt
+import matplotlib
 
-from src.coordination.conflict import Edge, VehicleRoute
-from src.coordination.negotiation import VirtualCreditBudget
-from src.coordination.resolver import resolve_conflicts_sequentially
-from src.coordination.sensitivity import (
-    DELTA_T_GRID_DEFAULT,
-    TAU_GRID_DEFAULT,
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+
+from src.coordination.conflict import Edge, VehicleRoute, prepare_occupancies  # noqa: E402
+from src.coordination.messages import MessageCounter  # noqa: E402
+from src.coordination.negotiation import VirtualCreditBudget  # noqa: E402
+from src.coordination.resolver import resolve_conflicts_sequentially  # noqa: E402
+from src.coordination.sensitivity import (  # noqa: E402
+    DEFAULT_DELTA_T_GRID,
+    DEFAULT_PILOT_SEEDS,
+    DEFAULT_TAU_GRID,
+    DEFAULT_TEST_SEEDS,
     run_tau_delta_t_sweep,
     select_operating_point,
     verify_seed_disjointness,
 )
-from src.coordination.trigger import ThresholdTrigger
-
-PILOT_SEEDS = (101, 102, 103, 104, 105)
-TEST_SEEDS = (201, 202, 203, 204, 205, 206, 207, 208, 209, 210)
+from src.coordination.trigger import ThresholdTrigger  # noqa: E402
 
 
-def build_synthetic_bottleneck_scenario(
-    seed: int,
-) -> Tuple[
-    Dict[str, VehicleRoute],
-    Dict[str, VirtualCreditBudget],
-    Dict[Edge, int],
-]:
-    """Generate a deterministic multi-vehicle bottleneck for sensitivity."""
-    rng = random.Random(seed)
-    caps: Dict[Edge, int] = {
-        ("N1", "N2"): 1,
-        ("N2", "N3"): 2,
-        ("N3", "N4"): 1,
-    }
-    routes: Dict[str, VehicleRoute] = {}
-    budgets: Dict[str, VirtualCreditBudget] = {}
-
-    for idx in range(1, 7):
-        vid = f"V{idx}"
-        start_t = rng.uniform(0.0, 180.0)
-        t12 = rng.uniform(8.0, 18.0)
-        t23 = rng.uniform(10.0, 20.0)
-        t34 = rng.uniform(8.0, 18.0)
-        prio = rng.choice([1.0, 2.0, 4.0])
-        routes[vid] = VehicleRoute(
-            vehicle_id=vid,
-            nodes=["N1", "N2", "N3", "N4"],
-            start_time=start_t,
-            travel_times={
-                ("N1", "N2"): t12,
-                ("N2", "N3"): t23,
-                ("N3", "N4"): t34,
-            },
-            priority_weight=prio,
-            detour_extra_time=rng.uniform(12.0, 30.0),
+def _weighted_delay_from_routes(
+    baseline_routes: Dict[str, VehicleRoute],
+    scheduled_routes: Dict[str, VehicleRoute],
+    priorities: Dict[str, float],
+) -> float:
+    """Compute priority-weighted completion delay directly from route intervals."""
+    total = 0.0
+    for vid, baseline in baseline_routes.items():
+        baseline_finish = baseline.start_time + sum(baseline.travel_times.values())
+        scheduled = scheduled_routes[vid]
+        scheduled_finish = scheduled.start_time + sum(
+            scheduled.travel_times.values()
         )
-        budgets[vid] = VirtualCreditBudget(vid, 100.0)
+        delay = max(0.0, scheduled_finish - baseline_finish)
+        total += priorities[vid] * delay
+    return round(total, 2)
 
-    return routes, budgets, caps
+
+def _schedule_without_negotiation(
+    routes: Dict[str, VehicleRoute],
+    edge: Edge,
+) -> Dict[str, VehicleRoute]:
+    """Apply first-come-first-served scheduling to the single shared edge."""
+    scheduled: Dict[str, VehicleRoute] = {}
+    edge_available = 0.0
+    for route in sorted(
+        routes.values(), key=lambda item: (item.start_time, item.vehicle_id)
+    ):
+        duration = route.travel_times[edge]
+        edge_start = max(route.start_time, edge_available)
+        scheduled[route.vehicle_id] = replace(route, start_time=edge_start)
+        edge_available = edge_start + duration
+    return scheduled
 
 
-def generate_f5_two_vehicle_demo(out_path: Path) -> None:
-    """Generates Figure F5: two-vehicle single-slot road without vs with."""
-    routes = {
-        "V1 (Standard)": VehicleRoute(
-            "V1 (Standard)",
-            ["A", "B"],
-            start_time=0.0,
-            travel_times={("A", "B"): 12.0},
-            priority_weight=1.0,
-        ),
-        "V2 (Express)": VehicleRoute(
-            "V2 (Express)",
-            ["A", "B"],
-            start_time=1.0,
-            travel_times={("A", "B"): 4.0},
-            priority_weight=4.0,
-        ),
+def generate_f5_two_vehicle_demo(output_path: Path) -> Dict[str, float]:
+    """Generate Figure F5 illustrating two-vehicle Vickrey auction scheduling."""
+    edge: Edge = ("A", "B")
+    ideal_routes = {
+        "V1": VehicleRoute("V1", ["A", "B"], 0.0, {edge: 12.0}, 1.0, 1.0),
+        "V2": VehicleRoute("V2", ["A", "B"], 1.0, {edge: 4.0}, 4.0, 5.0),
     }
-    caps = {("A", "B"): 1}
-    budgets = {vid: VirtualCreditBudget(vid, 50.0) for vid in routes}
-
-    # Without negotiation: V1 enters at 0..12, V2 queues behind V1 (12..16)
-    no_neg_intervals = {
-        "V1 (Standard)": (0.0, 12.0),
-        "V2 (Express)": (12.0, 16.0),
+    unnegotiated_routes = _schedule_without_negotiation(ideal_routes, edge)
+    capacities = {edge: 1}
+    priorities = {vid: route.priority_weight for vid, route in ideal_routes.items()}
+    budgets = {
+        vid: VirtualCreditBudget(vid, credits=100.0)
+        for vid in ideal_routes
     }
-    no_neg_weighted_delay = 1.0 * 0.0 + 4.0 * (12.0 - 1.0)
-
-    # With Vickrey negotiation: V2 wins slot (1..5), V1 yields until 5 (5..17)
-    updated, _ = resolve_conflicts_sequentially(
-        routes=routes,
-        trigger_policy=ThresholdTrigger(tau=30.0, edge_capacities=caps),
+    counter = MessageCounter()
+    auction_routes, _ = resolve_conflicts_sequentially(
+        routes=ideal_routes,
+        trigger_policy=ThresholdTrigger(
+            tau=60.0,
+            delta_t=0.0,
+            edge_capacities=capacities,
+        ),
         budgets=budgets,
         t_now=0.0,
-        edge_capacities=caps,
+        edge_capacities=capacities,
+        delta_t=0.0,
+        msg_counter=counter,
     )
-    with_neg_intervals = {
-        vid: (r.start_time, r.start_time + r.travel_times[("A", "B")])
-        for vid, r in updated.items()
-    }
-    with_neg_weighted_delay = 1.0 * (5.0 - 0.0) + 4.0 * 0.0
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True)
+    delay_unneg = _weighted_delay_from_routes(
+        ideal_routes, unnegotiated_routes, priorities
+    )
+    delay_auction = _weighted_delay_from_routes(
+        ideal_routes, auction_routes, priorities
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharey=True)
     panels = [
         (
             axes[0],
-            (
-                "Without Negotiation "
-                f"(Weighted Delay = {no_neg_weighted_delay:.0f})"
-            ),
-            no_neg_intervals,
+            unnegotiated_routes,
+            f"Without Negotiation (Weighted Delay = {delay_unneg:g})",
         ),
         (
             axes[1],
-            (
-                "With Vickrey Auction "
-                f"(Weighted Delay = {with_neg_weighted_delay:.0f})"
-            ),
-            with_neg_intervals,
+            auction_routes,
+            f"With Vickrey Auction (Weighted Delay = {delay_auction:g})",
         ),
     ]
+    colors = {"V1": "#4c72b0", "V2": "#f58518"}
 
-    colors = {"V1 (Standard)": "#4C78A8", "V2 (Express)": "#F58518"}
-    for ax, title, intervals in panels:
-        for idx, (label, (start, end)) in enumerate(intervals.items()):
+    for ax, panel_routes, subtitle in panels:
+        for y_idx, vid in enumerate(["V1", "V2"]):
+            occ = prepare_occupancies([panel_routes[vid]])[0]
+            width = occ.exit_time - occ.entry_time
             ax.barh(
-                idx,
-                end - start,
-                left=start,
+                y_idx,
+                width,
+                left=occ.entry_time,
                 height=0.45,
-                color=colors[label],
+                color=colors[vid],
                 edgecolor="black",
             )
             ax.text(
-                start + (end - start) / 2.0,
-                idx,
-                f"{start:.0f}-{end:.0f}s",
-                ha="center",
+                occ.entry_time + width / 2.0,
+                y_idx,
+                f"{occ.entry_time:g}-{occ.exit_time:g}s",
                 va="center",
+                ha="center",
                 color="white",
                 fontweight="bold",
-                fontsize=9,
             )
         ax.set_yticks([0, 1])
-        ax.set_yticklabels(list(intervals.keys()))
-        ax.set_xlabel("Simulated Time (s)")
+        ax.set_yticklabels(["V1 (Standard)", "V2 (Express)"])
         ax.set_xlim(0, 19)
-        ax.set_title(title, fontsize=10)
+        ax.set_xlabel("Simulated Time (s)")
+        ax.set_title(subtitle)
         ax.grid(axis="x", linestyle="--", alpha=0.4)
 
+    fig.suptitle(
+        "Illustration: Two-Vehicle Single-Slot Scheduling",
+        fontsize=12,
+        fontweight="bold",
+    )
     fig.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("wb") as output_file:
+        fig.savefig(output_file, format="png", dpi=200)
     plt.close(fig)
 
+    return {
+        "unnegotiated_weighted_delay": delay_unneg,
+        "auction_weighted_delay": delay_auction,
+    }
 
-def generate_f8_sensitivity_plot(
-    out_path: Path, json_out_path: Path
-) -> None:
-    """Runs pilot tuning + test sweep and generates Figure F8."""
-    verify_seed_disjointness(PILOT_SEEDS, TEST_SEEDS)
 
-    pilot_results = run_tau_delta_t_sweep(
-        pilot_or_test_seeds=PILOT_SEEDS,
-        scenario_builder=build_synthetic_bottleneck_scenario,
-        taus=TAU_GRID_DEFAULT,
-        delta_ts=DELTA_T_GRID_DEFAULT,
+def generate_f8_sensitivity_and_summary(
+    fig_path: Path,
+    summary_path: Path,
+) -> Dict[str, object]:
+    """Run rate-limited and unthrottled sweeps, plot Figure F8, and save summary JSON."""
+    verify_seed_disjointness(DEFAULT_PILOT_SEEDS, DEFAULT_TEST_SEEDS)
+
+    # 1. Default rate-limited sweep (cooldown_s = 60.0)
+    pilot_limited = run_tau_delta_t_sweep(
+        tau_grid=DEFAULT_TAU_GRID,
+        delta_t_grid=DEFAULT_DELTA_T_GRID,
+        seeds=DEFAULT_PILOT_SEEDS,
+        cooldown_s=60.0,
     )
-    chosen = select_operating_point(pilot_results)
-
-    test_results = run_tau_delta_t_sweep(
-        pilot_or_test_seeds=TEST_SEEDS,
-        scenario_builder=build_synthetic_bottleneck_scenario,
-        taus=TAU_GRID_DEFAULT,
-        delta_ts=DELTA_T_GRID_DEFAULT,
+    selected_limited, target_met_limited = select_operating_point(
+        pilot_limited, target_unresolved=0.0
     )
-    selected_test_result = next(
-        result
-        for result in test_results
-        if result.tau == chosen.tau and result.delta_t == chosen.delta_t
+    test_limited = run_tau_delta_t_sweep(
+        tau_grid=DEFAULT_TAU_GRID,
+        delta_t_grid=DEFAULT_DELTA_T_GRID,
+        seeds=DEFAULT_TEST_SEEDS,
+        cooldown_s=60.0,
+    )
+    test_selected_limited = next(
+        r
+        for r in test_limited
+        if r.tau == selected_limited.tau and r.delta_t == selected_limited.delta_t
     )
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
-    for dt in DELTA_T_GRID_DEFAULT:
-        subset = sorted(
-            [r for r in test_results if r.delta_t == dt],
-            key=lambda x: x.tau,
+    # 2. Unthrottled sweep (cooldown_s = 0.0)
+    pilot_unlimited = run_tau_delta_t_sweep(
+        tau_grid=DEFAULT_TAU_GRID,
+        delta_t_grid=DEFAULT_DELTA_T_GRID,
+        seeds=DEFAULT_PILOT_SEEDS,
+        cooldown_s=0.0,
+    )
+    selected_unlimited, target_met_unlimited = select_operating_point(
+        pilot_unlimited, target_unresolved=0.0
+    )
+    test_unlimited = run_tau_delta_t_sweep(
+        tau_grid=DEFAULT_TAU_GRID,
+        delta_t_grid=DEFAULT_DELTA_T_GRID,
+        seeds=DEFAULT_TEST_SEEDS,
+        cooldown_s=0.0,
+    )
+    test_selected_unlimited = next(
+        r
+        for r in test_unlimited
+        if r.tau == selected_unlimited.tau and r.delta_t == selected_unlimited.delta_t
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.6))
+    markers = ["o", "s", "^"]
+    for idx, dt in enumerate(DEFAULT_DELTA_T_GRID):
+        rows = sorted(
+            [r for r in test_limited if r.delta_t == dt],
+            key=lambda r: r.tau,
         )
-        taus = [r.tau for r in subset]
-        msgs = [r.mean_messages for r in subset]
-        unresolved = [r.mean_unresolved_conflicts for r in subset]
-
-        selected_label = " (pilot-selected)" if dt == chosen.delta_t else ""
-        axes[0].plot(
-            taus,
-            msgs,
-            marker="o",
-            label=f"delta_t = {dt:.0f}s{selected_label}",
+        taus = [r.tau for r in rows]
+        msgs = [r.mean_messages for r in rows]
+        unres = [r.mean_unresolved_conflicts for r in rows]
+        label = (
+            f"delta_t = {dt:g}s (pilot-selected)"
+            if dt == selected_limited.delta_t
+            else f"delta_t = {dt:g}s"
         )
-        axes[1].plot(
-            taus,
-            unresolved,
-            marker="s",
-            label=f"delta_t = {dt:.0f}s{selected_label}",
-        )
+        axes[0].plot(taus, msgs, marker=markers[idx], label=label)
+        axes[1].plot(taus, unres, marker=markers[idx], label=label)
 
-    axes[0].axvline(
-        chosen.tau,
-        color="gray",
-        linestyle="--",
-        label=f"Pilot-selected tau = {chosen.tau:.0f}s",
-    )
+    for ax in axes:
+        ax.axvline(
+            selected_limited.tau,
+            color="gray",
+            linestyle="--",
+            label=f"Pilot-selected tau = {selected_limited.tau:g}s",
+        )
+        ax.set_xlabel("Lookahead Horizon tau (s)")
+        ax.grid(True, linestyle="--", alpha=0.4)
+
     axes[0].scatter(
-        [selected_test_result.tau],
-        [selected_test_result.mean_messages],
-        color="black",
+        [test_selected_limited.tau],
+        [test_selected_limited.mean_messages],
         marker="*",
-        s=100,
-        zorder=3,
+        s=150,
+        color="black",
+        zorder=5,
         label="Selected point on test seeds",
-    )
-    axes[0].set_title("Negotiation Messages vs. Horizon tau")
-    axes[0].set_xlabel("Lookahead Horizon tau (s)")
-    axes[0].set_ylabel("Mean Negotiation Messages")
-    axes[0].grid(True, linestyle="--", alpha=0.4)
-    axes[0].legend()
-
-    axes[1].axvline(
-        chosen.tau,
-        color="gray",
-        linestyle="--",
-        label=f"Pilot-selected tau = {chosen.tau:.0f}s",
     )
     axes[1].scatter(
-        [selected_test_result.tau],
-        [selected_test_result.mean_unresolved_conflicts],
-        color="black",
+        [test_selected_limited.tau],
+        [test_selected_limited.mean_unresolved_conflicts],
         marker="*",
-        s=100,
-        zorder=3,
+        s=150,
+        color="black",
+        zorder=5,
         label="Selected point on test seeds",
     )
+
+    axes[0].set_ylabel("Mean Negotiation Messages")
+    axes[0].set_title("Negotiation Messages vs. Horizon tau")
+    axes[0].legend(loc="upper left")
+
+    axes[1].set_ylabel("Mean Unresolved Overlaps (delta_t = 0s)")
     axes[1].set_title("Unresolved Conflicts vs. Horizon tau")
-    axes[1].set_xlabel("Lookahead Horizon tau (s)")
-    axes[1].set_ylabel("Mean Unresolved Capacity Overlaps")
-    axes[1].grid(True, linestyle="--", alpha=0.4)
-    axes[1].legend()
+    axes[1].legend(loc="upper right")
 
     fig.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200)
+    fig_path.parent.mkdir(parents=True, exist_ok=True)
+    with fig_path.open("wb") as output_file:
+        fig.savefig(output_file, format="png", dpi=200)
     plt.close(fig)
 
-    payload = {
-        "pilot_seeds": list(PILOT_SEEDS),
-        "test_seeds": list(TEST_SEEDS),
-        "frozen_operating_point": {
-            "tau": chosen.tau,
-            "delta_t": chosen.delta_t,
-            "pilot_mean_messages": chosen.mean_messages,
-            "pilot_mean_unresolved_conflicts": (
-                chosen.mean_unresolved_conflicts
-            ),
+    summary: Dict[str, object] = {
+        "study_scope": "stand_alone_synthetic_bottleneck",
+        "frozen_in_simulator": False,
+        "unresolved_conflict_definition_delta_t_s": 0.0,
+        "tau_grid_s": list(DEFAULT_TAU_GRID),
+        "delta_t_grid_s": list(DEFAULT_DELTA_T_GRID),
+        "pilot_seeds": list(DEFAULT_PILOT_SEEDS),
+        "test_seeds": list(DEFAULT_TEST_SEEDS),
+        "with_rate_limiter_cooldown_60s": {
+            "cooldown_s": 60.0,
+            "target_unresolved": 0.0,
+            "target_met": target_met_limited,
+            "selected_tau_s": selected_limited.tau,
+            "selected_delta_t_s": selected_limited.delta_t,
+            "pilot_selected_cell": selected_limited.to_dict(),
+            "test_selected_cell": test_selected_limited.to_dict(),
+            "pilot_grid": [r.to_dict() for r in pilot_limited],
+            "test_grid": [r.to_dict() for r in test_limited],
         },
-        "test_sweep": [
-            {
-                "tau": r.tau,
-                "delta_t": r.delta_t,
-                "mean_messages": r.mean_messages,
-                "mean_unresolved_conflicts": r.mean_unresolved_conflicts,
-                "mean_total_delay_s": r.mean_total_delay_s,
-            }
-            for r in test_results
-        ],
+        "without_rate_limiter_cooldown_0s": {
+            "cooldown_s": 0.0,
+            "target_unresolved": 0.0,
+            "target_met": target_met_unlimited,
+            "selected_tau_s": selected_unlimited.tau,
+            "selected_delta_t_s": selected_unlimited.delta_t,
+            "pilot_selected_cell": selected_unlimited.to_dict(),
+            "test_selected_cell": test_selected_unlimited.to_dict(),
+            "pilot_grid": [r.to_dict() for r in pilot_unlimited],
+            "test_grid": [r.to_dict() for r in test_unlimited],
+        },
     }
-    json_out_path.parent.mkdir(parents=True, exist_ok=True)
-    json_out_path.write_text(json.dumps(payload, indent=2) + "\n")
+
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return summary
+
+
+def main() -> None:
+    """Generate F5, F8, and sensitivity summary JSON."""
+    f5_metrics = generate_f5_two_vehicle_demo(
+        Path("reports/figures/f5_two_vehicle.png")
+    )
+    summary = generate_f8_sensitivity_and_summary(
+        fig_path=Path("reports/figures/f8_tau_delta_t_sensitivity.png"),
+        summary_path=Path("reports/r5_sensitivity_summary.json"),
+    )
+    lim = summary["with_rate_limiter_cooldown_60s"]
+    unlim = summary["without_rate_limiter_cooldown_0s"]
+    print("F5 metrics:", f5_metrics)
+    print("With cooldown=60s:", lim["pilot_selected_cell"], lim["test_selected_cell"])
+    print(
+        "With cooldown=0s:",
+        unlim["pilot_selected_cell"],
+        unlim["test_selected_cell"],
+    )
 
 
 if __name__ == "__main__":
-    generate_f5_two_vehicle_demo(Path("reports/figures/f5_two_vehicle.png"))
-    generate_f8_sensitivity_plot(
-        Path("reports/figures/f8_tau_delta_t_sensitivity.png"),
-        Path("reports/r5_sensitivity_summary.json"),
-    )
+    main()
