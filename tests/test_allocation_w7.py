@@ -1,12 +1,16 @@
 """Week 7 and Week 8 tests for R4 allocation and centralized baseline.
 
 Validates boundary cases, priority drop ordering, deterministic tie-breaking,
-and partial-state invariance for final hardening and viva readiness.
+partial-state invariance, and log-schema completeness for final hardening.
 """
+import json
 from src.allocation.contract_net import ContractNet
 from src.allocation.central_vrp import CentralVRP
 from src.allocation.cost_model import VehicleState
+from src.allocation.sim_runner import AllocationSimulation
 from src.sim.models import Order, Vehicle
+from test_allocation_w2 import state as make_test_state
+from test_allocation_w4 import world as make_test_world
 
 
 class DummyWorldTravel:
@@ -106,3 +110,25 @@ def test_partial_state_preserves_next_node_commitment():
     assert result.vehicle_id == "V1"
     assert len(state.orders) == 1
     assert state.orders[0].id == "O1"
+
+
+def test_sim_runner_delivered_event_has_node_and_demand(tmp_path):
+    """Schema gap regression test: order_delivered payload must include node and demand."""
+    config = dict(mode='centralized', start_time_s=0,
+                  log_path=str(tmp_path / 'sim.jsonl'),
+                  solver_time_limit_s=0.05)
+    sim = AllocationSimulation(make_test_world(), config)
+    sim.add_vehicle(make_test_state('v1', 5.0).vehicle)
+    sim.add_order(Order('ord_1', 2, 3.0, service_time=1.0))
+    sim.run(50)
+    assert sim.terminal['ord_1'] == 'delivered'
+    lines = (tmp_path / 'sim.jsonl').read_text().splitlines()
+    del_rows = [
+        json.loads(line) for line in lines
+        if json.loads(line)['event'] == 'order_delivered'
+    ]
+    assert len(del_rows) == 1
+    payload = del_rows[0]['payload']
+    assert payload['order_id'] == 'ord_1'
+    assert payload['node'] == 2
+    assert payload['demand'] == 3.0
