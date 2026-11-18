@@ -74,6 +74,13 @@ def test_planner_with_no_vehicles(tmp_path):
     assert s["replans"] == 0 and s["replan_cpu_seconds"] == 0.0 and rows(env, "replan_summary")
 
 
+def test_set_stops_with_an_unknown_vehicle_names_it(tmp_path):
+    """R1's W7 open issue 7: an unknown id gave a bare KeyError('V9')."""
+    env, planner, veh = grid_run(tmp_path)
+    with pytest.raises(KeyError, match="unknown vehicle id 'V9'.*V1"):
+        planner.set_stops("V9", [], 0.0)
+
+
 def test_vehicle_with_no_stops(tmp_path):
     world = FakeWorld(grid_graph())
     env = make_env(world, tmp_path)
@@ -212,12 +219,18 @@ def test_every_replan_row_is_timed_and_the_summary_adds_up(tmp_path):
         sum(r["payload"]["cpu_seconds"] for r in replans))
     assert s["kept_cpu_seconds"] == pytest.approx(sum(r["payload"]["cpu_seconds"] for r in kept))
     assert s["agent_cpu_seconds"] >= s["kept_cpu_seconds"]
-    assert s["coordination_cpu_seconds"] > 0.0
+    # CPU time can read 0.0 on Windows (process_time ticks every ~15.6 ms), so check the
+    # hook was timed (it ran) and the total is a valid time, not that it is > 0.
+    assert calls and s["coordination_cpu_seconds"] >= 0.0
+    assert math.isfinite(s["coordination_cpu_seconds"])
     assert s["hook_errors"] == 0 and s["ignored_events"] == 0
 
 
+CPU_TICK_S = 0.02    # > Windows process_time tick (15.6 ms); get_clock_info understates it
+
+
 def test_wall_time_is_at_least_cpu_time_for_a_real_replan():
-    """One replan on the real map: wall >= CPU (single thread), both > 0."""
+    """One replan on the real map: wall >= CPU (single thread), up to one CPU clock tick."""
     from src.search.heuristics import make_heuristic
     from src.world.graph_loader import load_road_graph
     G = load_road_graph("secunderabad_small")
@@ -232,7 +245,9 @@ def test_wall_time_is_at_least_cpu_time_for_a_real_replan():
     world.add_disruption(u, v, world.edge_key(u, v), FAR, start_t_seconds=START)
     agent.on_world_change([(u, v)], START)
     assert agent.last_cpu > 0.0 or agent.last_wall > 0.0
-    assert agent.last_wall >= agent.last_cpu * 0.5            # allow timer noise
+    # Windows: process_time ticks every ~15.6 ms, so one tick of CPU can exceed a
+    # 2 ms wall time; allow one tick (CPU_TICK_S) on top of the timer noise.
+    assert agent.last_wall + CPU_TICK_S >= agent.last_cpu * 0.5
 
 
 # ---------------------------------------------------------------------------

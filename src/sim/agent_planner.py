@@ -503,6 +503,9 @@ class AgentPlanner(Planner):
         goes through the unreachable policy; in full mode R5's hook runs on
         the new route, as after any replan.
         """
+        if vid not in self.agents:
+            raise KeyError(f"set_stops: unknown vehicle id {vid!r}; AgentPlanner knows "
+                           f"{sorted(self.agents)} (was the vehicle registered?)")
         agent = self.agents[vid]
         stops, ids = [], []
         for o in orders:
