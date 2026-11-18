@@ -102,7 +102,8 @@ whether it was actually on.
 
 **Required traffic (W7)**: without `data/raw/metr-la.h5` (or torch / h5py) the world only warns
 and every road runs at free-flow speed, so a run finishes normally with no traffic in it.
-`require_traffic: true` makes it fail instead; the main sweep config sets it.
+`require_traffic: true` makes it fail instead; set it in a sweep's `overrides` for any run
+whose results depend on traffic.
 
 **Horizon**: when the run reaches `duration_seconds`, orders still pending on a vehicle are
 failed with reason `horizon_exceeded`, so every order ends delivered or failed.
@@ -159,7 +160,7 @@ Bug triage list for the final week: what is known not to work, or is not done, a
 | # | issue | effect | owner |
 |---|-------|--------|-------|
 | 1 | **Known limitation (W7, `docs/DECISIONS.md` "Dynamic Orders in Simulated Runs").** `new_order` disruption events (D11) only announce `dyn_N`; no order is created. R3's `generate_order` needs the Amazon profile (`data/profile/`, not in the repo) | 30% of disruption events change nothing in independent/full; in centralized each costs a re-solve. Dynamic orders come from the scenarios' `release_time`s (about 29% of orders) | closed (documented) |
-| 2 | Centralized mode re-solves (OR-Tools, 2 s limit per solve, frozen by R4 in W7) on every event | ~1.5-2 min for viz_demo at 10/h; > 20 min at 20 vehicles (profile above), too slow for a full sweep; the main sweep runs centralized on a subset (`configs/sweeps/`) | R4 (accepted as a cost of the baseline) |
+| 2 | Centralized mode re-solves (OR-Tools, 2 s limit per solve, frozen by R4 in W7) on every event | ~1.5-2 min for viz_demo at 10/h; > 20 min at 20 vehicles (profile above), too slow for a full sweep at 20 vehicles; a sweep has to limit centralized runs to small scenarios or few seeds | R4 (accepted as a cost of the baseline) |
 | 3 | R4's `allocation_summary` is logged after `sim_complete` (could use `env.add_finisher`) | allowed as an exception in `check_log.py` | R4 |
 | 4 | R4's `central_state_report` / `central_plan_broadcast` events are not in `docs/log_schema.md` | `check_log` warns | R4 |
 | 5 | No depot unloading: load never decreases (`TODO(R4/R5)` in `environment.py`) | an order blocked by capacity can never be served later | R4/R5 (scope decision) |
