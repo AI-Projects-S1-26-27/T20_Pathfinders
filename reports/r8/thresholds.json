@@ -1,0 +1,116 @@
+[
+ {
+  "id": "H1",
+  "group": "H1",
+  "claim": "full within +10% of centralized delivery time at \u03bb=10",
+  "value": 0.23948997419824317,
+  "ci": [
+   0.173656501752066,
+   0.3186406456940644
+  ],
+  "n_pairs": 6,
+  "pass": false
+ },
+ {
+  "id": "H2a",
+  "group": "H2a",
+  "claim": "full uses at most 50% of centralized planning_cpu_s at \u03bb=10",
+  "value": 0.023582775056046668,
+  "ci": [
+   0.020182682769912197,
+   0.027203158234042957
+  ],
+  "n_pairs": 6,
+  "pass": true
+ },
+ {
+  "id": "H2b",
+  "group": "H2b",
+  "claim": "full uses at most 50% of centralized messages_total at \u03bb=10",
+  "value": 0.8222222222222222,
+  "ci": [
+   0.7967646014557074,
+   0.8504157050713059
+  ],
+  "n_pairs": 6,
+  "pass": false
+ },
+ {
+  "id": "H3a \u03bb=60",
+  "group": "H3a",
+  "claim": "full lower than independent in delivery_time_mean_s, non-overlapping 95% CIs",
+  "value": 0.9759777777777382,
+  "ci": [
+   0.6723331944444706,
+   1.3335550694443798
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": false
+ },
+ {
+  "id": "H3a \u03bb=150",
+  "group": "H3a",
+  "claim": "full lower than independent in delivery_time_mean_s, non-overlapping 95% CIs",
+  "value": 0.9927059045225709,
+  "ci": [
+   0.6948546527777544,
+   1.3453183141400853
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": false
+ },
+ {
+  "id": "H3a \u03bb=300",
+  "group": "H3a",
+  "claim": "full lower than independent in delivery_time_mean_s, non-overlapping 95% CIs",
+  "value": 1.0694182300391237,
+  "ci": [
+   0.7593220083054562,
+   1.4270789963708153
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": false
+ },
+ {
+  "id": "H3b \u03bb=60",
+  "group": "H3b",
+  "claim": "full lower than independent in violations_cap1, non-overlapping 95% CIs",
+  "value": -3.888888888888889,
+  "ci": [
+   -5.555555555555555,
+   -2.1666666666666665
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": true
+ },
+ {
+  "id": "H3b \u03bb=150",
+  "group": "H3b",
+  "claim": "full lower than independent in violations_cap1, non-overlapping 95% CIs",
+  "value": -3.888888888888889,
+  "ci": [
+   -5.555555555555555,
+   -2.1666666666666665
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": true
+ },
+ {
+  "id": "H3b \u03bb=300",
+  "group": "H3b",
+  "claim": "full lower than independent in violations_cap1, non-overlapping 95% CIs",
+  "value": -3.7777777777777777,
+  "ci": [
+   -5.555555555555555,
+   -1.9430555555555757
+  ],
+  "n_pairs": 18,
+  "pass": false,
+  "paired_ci_below_zero": true
+ }
+]

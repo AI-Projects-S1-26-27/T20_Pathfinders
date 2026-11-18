@@ -1,0 +1,12 @@
+# R8 pilot, rate calibration (plan Section 7.1: "calibrate in the pilot so the top rate is clearly
+# stressful but still solvable"). The planned rates 0-20 per hour barely change any metric on this
+# map (pilot.yaml), so this pilot looks at higher rates. Decentralized modes only (centralized is
+# too slow for a calibration run). Pilot seeds only.
+sweep_id: pilot_stress
+configs: ["configs/scenarios/small_uniform_s0.yaml", "configs/scenarios/medium_uniform_s0.yaml"]
+modes: [independent, full]
+seeds: [7, 8]
+rates: [20.0, 60.0, 150.0, 300.0]
+predictor: [false]
+out_dir: runs/pilot_stress
+workers: 1

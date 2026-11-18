@@ -1,0 +1,13 @@
+{
+ "generated": "2026-11-18 07:43:16",
+ "git_commit": "d71f103",
+ "python": "3.13.18",
+ "platform": "Linux-6.18.44-fc-v595-x86_64-with-glibc2.39",
+ "cpu_count": 2,
+ "traffic_model": "NOT AVAILABLE: free-flow travel times plus disruption spikes only",
+ "predictor": "off in every sweep (predictor determinism not verified)",
+ "sweeps": {
+  "main": "81732778ef5bff6b",
+  "small_three_modes": "3bd83abcdfb23811"
+ }
+}

@@ -1,0 +1,14 @@
+# R8 main sweep (frozen): independent vs full, the ablation that isolates selective coordination.
+# 9 medium scenarios (3 layouts x 3 instances) x 2 modes x 5 disruption rates x 2 seeds = 180 runs.
+# Seeds 101 and 102 are disjoint from the pilot seeds (7-9, 9001-9005).
+# Rates: 0 and 20 from D11, plus 60, 150 and 300 added after the pilot (configs/sweeps/pilot_stress.yaml):
+# at the D11 rates alone no metric moves on this map. 300/h still delivers every order (0 failed).
+# Centralized is not here: it needs about 5 minutes per run even on the small scenarios (see
+# small_three_modes.yaml). The glob is quoted so YAML does not read [0-2] as a list.
+sweep_id: main
+configs: ["configs/scenarios/medium_*_s[0-2].yaml"]
+modes: [independent, full]
+seeds: [101, 102]
+rates: [0.0, 20.0, 60.0, 150.0, 300.0]
+predictor: [false]
+out_dir: runs/main

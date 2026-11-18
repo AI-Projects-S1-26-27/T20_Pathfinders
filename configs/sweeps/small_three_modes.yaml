@@ -1,0 +1,10 @@
+# R8 three-mode comparison (frozen): the only place the centralized OR-Tools baseline appears.
+# 3 small scenarios x 3 modes x 1 rate x 2 seeds = 18 runs (6 centralized, about 5 minutes each).
+# Rate 10/h as pre-registered in docs/EXPERIMENT_PROTOCOL.md (criteria H1, H2).
+sweep_id: small_three_modes
+configs: ["configs/scenarios/small_*_s0.yaml"]
+modes: [independent, full, centralized]
+seeds: [101, 102]
+rates: [10.0]
+predictor: [false]
+out_dir: runs/small_three_modes
