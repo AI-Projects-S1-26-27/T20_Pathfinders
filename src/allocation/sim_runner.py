@@ -77,7 +77,9 @@ class AllocationSimulation(DeliverySimEnvironment):
                 v.load += order.demand
                 self.controller.busy.pop(v.id, None)
                 self.terminal[order.id] = 'delivered'
-                self.log_event('order_delivered', {'order_id': order.id}, v.id)
+                self.log_event('order_delivered', {'order_id': order.id,
+                                                   'node': order.node,
+                                                   'demand': order.demand}, v.id)
                 continue
             travel = WorldTravel(self.world, now)
             _, path = travel.path(v, v.current_node, order.node)
