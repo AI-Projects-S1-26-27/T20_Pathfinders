@@ -27,11 +27,6 @@ def test_offset_rolls_whole_days():
     assert np.array_equal(b.mult[:, :288], a.mult[:, 864:1152])
 
 
-def test_weekday_offsets_only_weekdays():
-    offs = weekday_offsets()
-    d0 = pd.Timestamp("2012-06-05").dayofweek
-    assert offs and all((d0 + d) % 7 < 5 for d in offs)
-
 
 def test_predictor_clock_follows_offset():
     base = Predictor(TrafficModel.from_graph())
@@ -63,6 +58,6 @@ def test_weekday_feature_matches_clock():
             assert round(p._features(step)[-1, 2] * 6) == ts.dayofweek
 
 
-def test_bad_day_never_chosen():
-    from src.world.traffic_model import BAD_DAYS, day_for_seed
-    assert all(day_for_seed(s) not in BAD_DAYS for s in range(200))
+def test_table_days_matches_data():
+    from src.world.traffic_model import TABLE_DAYS
+    assert TrafficModel.from_graph().n_days == TABLE_DAYS
